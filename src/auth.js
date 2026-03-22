@@ -1,7 +1,8 @@
+// src/auth.js
 import CredentialsProvider from "next-auth/providers/credentials";
 import axios from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3002/api";
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3002/api").replace(/\/$/, "");
 
 export const authOptions = {
   session: { strategy: "jwt" },
@@ -16,14 +17,15 @@ export const authOptions = {
           const password = credentials?.password;
           if (!email || !password) return null;
 
-          // ✅ OJO: endpoints reales
-          const loginRes = await axios.post(`${API_URL}/login`, { email, password });
+          // ✅ endpoints reales (según tu curl)
+          const loginRes = await axios.post(`${API_URL}/auth/login`, { email, password }, { withCredentials: true });
           if (!loginRes.data?.token) return null;
 
           const backendToken = loginRes.data.token;
 
-          const meRes = await axios.get(`${API_URL}/me`, {
+          const meRes = await axios.get(`${API_URL}/auth/me`, {
             headers: { Authorization: `Bearer ${backendToken}` },
+            withCredentials: true,
           });
 
           const u = meRes.data;
@@ -37,7 +39,7 @@ export const authOptions = {
             backendToken,
           };
         } catch {
-          return null; // NextAuth mostrará credenciales inválidas
+          return null;
         }
       },
     }),

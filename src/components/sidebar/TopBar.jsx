@@ -1,20 +1,16 @@
-"use client";
-
-// src/components/sidebar/TopBar.jsx
 import { useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { mockUser } from "@/lib/mockData";
+import { useTheme } from "@/app/ThemeContext";
 
 const pageTitle = (pathname) => {
   const map = {
-    "/dashboard": "Panel Principal",
-    "/notificaciones": "Notificaciones",
-    "/autorizaciones": "Autorizaciones",
-    "/validacion-pre-siniestro": "Validación Pre-Siniestro",
-    "/gestion-siniestros": "Gestión de Siniestros",
-    "/reportes-analitica": "Reportes y Analítica",
+    "/dashboard": "Dashboard",
+    "/captaciones": "Captaciones",
+    "/pre-siniestro": "Pre-Siniestros",
+    "/siniestros": "Siniestros",
     "/usuarios": "Usuarios",
     "/configuracion": "Configuración",
+    "/historial": "Historial",
   };
   return map[pathname] || "ASESUR";
 };
@@ -23,119 +19,46 @@ export default function TopBar() {
   const pathname = usePathname();
   const title = useMemo(() => pageTitle(pathname), [pathname]);
   const [q, setQ] = useState("");
+  const { theme, toggleTheme } = useTheme();
 
   return (
-    <div
-      style={{
-        height: 64,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "0 18px",
-        borderBottom: "1px solid #E5E7EB",
-        background: "#fff",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ width: 1, height: 26, background: "#E5E7EB" }} />
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-          <div style={{ fontSize: 14, color: "#64748B" }}>ASESUR</div>
-          <div style={{ fontSize: 14, color: "#94A3B8" }}>/</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#0F172A" }}>
-            {title}
-          </div>
-        </div>
+    <header className="flex justify-between items-center w-full px-8 py-6 bg-surface/60 backdrop-blur-sm sticky top-0 z-40 border-b border-outline-variant/10">
+      <div className="flex items-center gap-4">
+        <h2 className="font-headline text-2xl font-extrabold tracking-tight text-on-surface">{title.toUpperCase()}</h2>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ width: 420, maxWidth: "48vw" }}>
-          <div style={{ position: "relative" }}>
-            <span
-              style={{
-                position: "absolute",
-                left: 12,
-                top: 10,
-                fontSize: 14,
-                color: "#94A3B8",
-              }}
-            >
-              🔎
-            </span>
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar caso, cliente..."
-              style={{
-                width: "100%",
-                padding: "10px 12px 10px 34px",
-                borderRadius: 10,
-                border: "1px solid #E5E7EB",
-                outline: "none",
-                background: "#fff",
-              }}
-            />
-          </div>
-        </div>
-
-        <button
-          type="button"
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 10,
-            border: "1px solid #E5E7EB",
-            background: "#fff",
-            cursor: "pointer",
-            position: "relative",
-          }}
-          title="Notificaciones"
-        >
-          🔔
-          <span
-            style={{
-              position: "absolute",
-              top: -6,
-              right: -6,
-              width: 18,
-              height: 18,
-              borderRadius: 999,
-              background: "#EF4444",
-              color: "#fff",
-              fontSize: 11,
-              fontWeight: 700,
-              display: "grid",
-              placeItems: "center",
-              border: "2px solid #fff",
-            }}
-          >
-            4
+      <div className="flex items-center gap-6">
+        <div className="relative group">
+          <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-on-surface-variant">
+            <span className="material-symbols-outlined text-sm">search</span>
           </span>
-        </button>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            className="bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-2 text-sm w-64 focus:ring-1 focus:ring-primary/50 transition-all outline-none text-on-surface placeholder:text-on-surface-variant"
+            placeholder="Buscar expedientes..."
+          />
+        </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 999,
-              background: "#0F172A",
-              color: "#fff",
-              display: "grid",
-              placeItems: "center",
-              fontWeight: 700,
-              fontSize: 13,
-            }}
+        <div className="flex items-center gap-3">
+          <button title="Notificaciones" className="p-2 rounded-full hover:bg-surface-container-highest transition-colors relative text-primary">
+            <span className="material-symbols-outlined">notifications</span>
+            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-surface-container"></span>
+          </button>
+          <button title="Ayuda" className="p-2 rounded-full hover:bg-surface-container-highest transition-colors text-primary">
+            <span className="material-symbols-outlined">help_outline</span>
+          </button>
+          <button
+            onClick={toggleTheme}
+            title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+            className="p-2 rounded-full hover:bg-surface-container-highest transition-colors text-primary"
           >
-            {mockUser.initials}
-          </div>
-          <div style={{ lineHeight: 1.1 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>
-              {mockUser.name}
-            </div>
-            <div style={{ fontSize: 12, color: "#64748B" }}>{mockUser.role}</div>
-          </div>
+            <span className="material-symbols-outlined">
+              {theme === "dark" ? "light_mode" : "dark_mode"}
+            </span>
+          </button>
         </div>
       </div>
-    </div>
+    </header>
   );
 }

@@ -1,6 +1,5 @@
 "use client";
 
-// src/components/sidebar/Sidebar.jsx
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
@@ -14,61 +13,36 @@ const getInitials = (name) => {
   return (first + second).toUpperCase() || "U";
 };
 
-const prettyRole = (rol) => {
-  const r = String(rol || "").trim();
-  if (!r) return "Usuario";
-  return r.charAt(0).toUpperCase() + r.slice(1).toLowerCase();
-};
-
-const NavItem = ({ href, icon, label, badge }) => {
+const NavItem = ({ href, icon, label, badge, isCollapsed }) => {
   const pathname = usePathname();
   const active = pathname === href;
 
   return (
     <Link
       href={href}
-      style={{
-        textDecoration: "none",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "10px 12px",
-        borderRadius: 10,
-        color: active ? "#0F172A" : "#CBD5E1",
-        background: active ? "#1118271A" : "transparent",
-        border: active ? "1px solid #FFFFFF22" : "1px solid transparent",
-      }}
+      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ease-in-out group ${active
+        ? "bg-surface-container-highest text-secondary border-l-4 border-secondary"
+        : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+        } ${isCollapsed ? "justify-center px-0 border-l-0" : ""}`}
+      title={isCollapsed ? label : ""}
     >
-      <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ width: 18, textAlign: "center" }}>{icon}</span>
-        <span style={{ fontSize: 14, fontWeight: active ? 700 : 600 }}>
-          {label}
-        </span>
+      <span className={`material-symbols-outlined ${active ? "active-icon" : ""}`}
+        style={{ fontVariationSettings: `'FILL' ${active ? 1 : 0}` }}>
+        {icon}
       </span>
-
-      {badge ? (
-        <span
-          style={{
-            minWidth: 20,
-            height: 20,
-            padding: "0 6px",
-            borderRadius: 999,
-            display: "grid",
-            placeItems: "center",
-            background: "#991B1B",
-            color: "#fff",
-            fontSize: 12,
-            fontWeight: 800,
-          }}
-        >
+      {!isCollapsed && (
+        <span className="font-medium truncate flex-1">{label}</span>
+      )}
+      {!isCollapsed && badge && (
+        <span className="bg-red-800 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
           {badge}
         </span>
-      ) : null}
+      )}
     </Link>
   );
 };
 
-export default function Sidebar() {
+export default function Sidebar({ isCollapsed, setIsCollapsed }) {
   const { data: session, status } = useSession();
 
   const userName =
@@ -77,137 +51,78 @@ export default function Sidebar() {
     session?.user?.email ||
     "Usuario";
 
-  const userRole =
-    session?.user?.rol || session?.user?.role || session?.rol || "USUARIO";
-
+  const userRole = (session?.user?.rol || session?.user?.role || session?.rol || "USUARIO").toUpperCase();
   const initials = getInitials(userName);
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-50 w-[280px] bg-[#0B1F3B] text-slate-200 border-r border-[#0B1F3B] p-4 flex flex-col overflow-y-auto">
-      {/* Brand */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 8 }}>
-        <div
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: 12,
-            background: "#FBBF24",
-            display: "grid",
-            placeItems: "center",
-            fontWeight: 900,
-            color: "#0B1F3B",
-          }}
+    <aside
+      className={`fixed left-0 top-0 h-full flex flex-col py-6 bg-surface font-['Manrope'] text-sm tracking-wide z-50 transition-all duration-300 ease-in-out border-r border-surface-container-high  ${isCollapsed ? "w-20" : "w-64"
+        }`}
+    >
+      {/* Brand & Toggle */}
+      <div className={`px-6 flex items-center mb-10 ${isCollapsed ? "justify-center px-0" : "justify-between"}`}>
+        <div className={`flex items-center gap-3 ${isCollapsed ? "hidden" : ""}`}>
+          <div className="w-8 h-8 rounded bg-secondary-container flex items-center justify-center">
+            <span className="material-symbols-outlined text-on-secondary" style={{ fontVariationSettings: "'FILL' 1" }}>shield</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold tracking-tighter text-on-surface">ASESUR</h1>
+          </div>
+        </div>
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="p-1 hover:bg-surface-container-highest rounded-lg transition-colors text-on-surface-variant"
         >
-          A
-        </div>
-        <div>
-          <div style={{ fontWeight: 800, letterSpacing: 0.3 }}>ASESUR</div>
-          <div style={{ fontSize: 12, color: "#94A3B8" }}>Asesoría de Seguros</div>
-        </div>
+          <span className="material-symbols-outlined">
+            {isCollapsed ? "menu" : "menu_open"}
+          </span>
+        </button>
       </div>
 
-      {/* Principal */}
-      <div style={{ marginTop: 18 }}>
-        <div style={{ fontSize: 11, color: "#64748B", padding: "8px 10px" }}>
-          PRINCIPAL
-        </div>
-        <div style={{ display: "grid", gap: 8 }}>
-          <NavItem href="/dashboard" icon="▦" label="Panel Principal" />
-          <NavItem href="/captura-caso" icon="▣" label="Captura de Caso" />
-          <NavItem
-            href="/validacion-pre-siniestro"
-            icon="✓"
-            label="Validación Pre-Siniestro"
-          />
-          <NavItem
-            href="/autorizaciones"
-            icon="🛡"
-            label="Autorizaciones"
-            badge="5"
-          />
-          <NavItem href="/gestion-siniestros" icon="📄" label="Gestión de Siniestros" />
-        </div>
-      </div>
+      {/* Navigation */}
+      <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
+        <NavItem href="/dashboard" icon="dashboard" label="Dashboard" isCollapsed={isCollapsed} />
+        <NavItem href="/captaciones" icon="payments" label="Captaciones" isCollapsed={isCollapsed} />
+        <NavItem href="/pre-siniestro" icon="fact_check" label="Pre-Siniestros" isCollapsed={isCollapsed} />
+        <NavItem href="/siniestros" icon="emergency" label="Siniestros" isCollapsed={isCollapsed} />
 
-      {/* Sistema */}
-      <div style={{ marginTop: 18 }}>
-        <div style={{ fontSize: 11, color: "#64748B", padding: "8px 10px" }}>
-          SISTEMA
-        </div>
-        <div style={{ display: "grid", gap: 8 }}>
-          <NavItem href="/notificaciones" icon="🔔" label="Notificaciones" badge="12" />
-          <NavItem href="/reportes-analitica" icon="📊" label="Reportes y Analítica" />
-          <NavItem href="/usuarios" icon="👥" label="Usuarios" />
-          <NavItem href="/configuracion" icon="⚙️" label="Configuración" />
-        </div>
-      </div>
+        <NavItem href="/usuarios" icon="group" label="Usuarios" isCollapsed={isCollapsed} />
+        <NavItem href="/configuracion" icon="settings" label="Configuración" isCollapsed={isCollapsed} />
+        <NavItem href="/historial" icon="history" label="Historial" isCollapsed={isCollapsed} />
+      </nav>
 
       {/* User card */}
-      <div style={{ marginTop: "auto", paddingTop: 16 }}>
-        <div
-          style={{
-            padding: 12,
-            borderRadius: 12,
-            background: "#0F2A52",
-            border: "1px solid #163A6B",
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <div
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 999,
-              background: "#0F172A",
-              display: "grid",
-              placeItems: "center",
-              fontWeight: 800,
-            }}
-            title={userName}
-          >
-            {initials}
+      <div className="mt-auto px-4 pt-4">
+        <div className={`bg-surface-container-high rounded-xl p-4 mb-4 transition-all duration-300 ${isCollapsed ? "p-2 flex flex-col items-center" : ""}`}>
+          <div className={`flex items-center gap-3 mb-3 ${isCollapsed ? "mb-1" : ""}`}>
+            <div className="relative flex-shrink-0">
+              <div className="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center text-primary font-bold">
+                {initials}
+              </div>
+              <span className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-surface-container-high rounded-full"></span>
+            </div>
+            {!isCollapsed && (
+              <div className="overflow-hidden">
+                <p className="text-sm font-bold truncate text-on-surface" title={userName}>{userName}</p>
+                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-tertiary-container text-on-tertiary-container">
+                  {userRole}
+                </span>
+              </div>
+            )}
           </div>
-
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {/* ✅ hover tooltip con el nombre completo */}
-            <div
-              title={userName}
-              style={{
-                fontSize: 13,
-                fontWeight: 800,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                cursor: "default",
-              }}
+          <div className={`flex flex-col gap-1 ${isCollapsed ? "items-center" : ""}`}>
+            <Link href="/perfil" className="flex items-center gap-2 text-on-surface-variant hover:text-on-surface text-xs py-1 transition-colors">
+              <span className="material-symbols-outlined text-base">account_circle</span>
+              {!isCollapsed && <span>Perfil</span>}
+            </Link>
+            <button
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              className="flex items-center gap-2 text-error/80 hover:text-error text-xs py-1 transition-colors w-full text-left"
             >
-              {status === "loading" ? "Cargando..." : userName}
-            </div>
-
-            <div style={{ fontSize: 12, color: "#94A3B8" }}>
-              {prettyRole(userRole)}
-            </div>
+              <span className="material-symbols-outlined text-base">logout</span>
+              {!isCollapsed && <span>Salir</span>}
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            style={{
-              border: "1px solid #244B7C",
-              background: "#0B1F3B",
-              color: "#E2E8F0",
-              borderRadius: 10,
-              padding: "8px 10px",
-              cursor: "pointer",
-              fontWeight: 700,
-              fontSize: 12,
-              whiteSpace: "nowrap",
-            }}
-          >
-            Salir
-          </button>
         </div>
       </div>
     </aside>
