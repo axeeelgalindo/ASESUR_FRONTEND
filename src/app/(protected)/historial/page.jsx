@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { apiGet } from "@/lib/api";
-
+import { Pagination } from "@/components/ui/Pagination";
 const ENTITY_ICONS = {
     USUARIO: "group",
     CASO: "shield",
@@ -224,48 +224,12 @@ export default function HistorialPage() {
 
                     {/* Pagination */}
                     {meta.paginas > 1 && (
-                        <div className="flex items-center justify-center gap-2 mt-10">
-                            <button
-                                disabled={filtros.pagina === 1}
-                                onClick={() => setFiltros(prev => ({ ...prev, pagina: prev.pagina - 1 }))}
-                                className="p-2 rounded-xl bg-surface-container-high text-on-surface-variant disabled:opacity-30 transition-all hover:bg-primary/10 hover:text-primary"
-                            >
-                                <span className="material-symbols-outlined">chevron_left</span>
-                            </button>
-
-                            <div className="flex items-center gap-1">
-                                {[...Array(meta.paginas)].map((_, i) => {
-                                    const p = i + 1;
-                                    // Mostrar solo algunas páginas si son muchas
-                                    if (meta.paginas > 7) {
-                                        if (p !== 1 && p !== meta.paginas && Math.abs(p - filtros.pagina) > 1) {
-                                            if (p === 2 || p === meta.paginas - 1) return <span key={p} className="px-1 opacity-30 text-xs">...</span>;
-                                            return null;
-                                        }
-                                    }
-
-                                    return (
-                                        <button
-                                            key={p}
-                                            onClick={() => setFiltros(prev => ({ ...prev, pagina: p }))}
-                                            className={`w-10 h-10 rounded-xl text-sm font-bold transition-all ${filtros.pagina === p
-                                                ? "bg-primary text-on-primary shadow-lg shadow-primary/20"
-                                                : "bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest"
-                                                }`}
-                                        >
-                                            {p}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-
-                            <button
-                                disabled={filtros.pagina === meta.paginas}
-                                onClick={() => setFiltros(prev => ({ ...prev, pagina: prev.pagina + 1 }))}
-                                className="p-2 rounded-xl bg-surface-container-high text-on-surface-variant disabled:opacity-30 transition-all hover:bg-primary/10 hover:text-primary"
-                            >
-                                <span className="material-symbols-outlined">chevron_right</span>
-                            </button>
+                        <div className="flex justify-center mt-10">
+                            <Pagination
+                                current={filtros.pagina}
+                                total={meta.paginas}
+                                onPageChange={(p) => setFiltros(prev => ({ ...prev, pagina: p }))}
+                            />
                         </div>
                     )}
                 </div>

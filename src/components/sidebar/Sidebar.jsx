@@ -86,8 +86,12 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }) {
         <NavItem href="/pre-siniestro" icon="fact_check" label="Pre-Siniestros" isCollapsed={isCollapsed} />
         <NavItem href="/siniestros" icon="emergency" label="Siniestros" isCollapsed={isCollapsed} />
 
-        <NavItem href="/usuarios" icon="group" label="Usuarios" isCollapsed={isCollapsed} />
-        <NavItem href="/configuracion" icon="settings" label="Configuración" isCollapsed={isCollapsed} />
+        {userRole === "MASTER" && (
+          <NavItem href="/usuarios" icon="group" label="Usuarios" isCollapsed={isCollapsed} />
+        )}
+        {userRole === "MASTER" && (
+          <NavItem href="/configuracion" icon="settings" label="Configuración" isCollapsed={isCollapsed} />
+        )}
         <NavItem href="/historial" icon="history" label="Historial" isCollapsed={isCollapsed} />
       </nav>
 

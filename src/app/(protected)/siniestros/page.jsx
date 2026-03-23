@@ -80,6 +80,17 @@ const EstadoFacturacionLabel = {
   ENVIADO_CLIENTE: "Enviado a cliente",
 };
 
+import { Pill } from "@/components/ui/Pill";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { Section } from "@/components/ui/Section";
+import { Drawer } from "@/components/ui/Drawer";
+import { Modal } from "@/components/ui/Modal";
+import { Tabs } from "@/components/ui/Tabs";
+import { Pagination } from "@/components/ui/Pagination";
+
 function cls(...s) {
   return s.filter(Boolean).join(" ");
 }
@@ -95,224 +106,16 @@ const fmt = (d) => {
   }).format(new Date(d));
 };
 
-function Pill({ children, tone = "gray" }) {
-  const tones = {
-    gray: "bg-on-surface-variant/5 text-on-surface-variant border-outline-variant/20 hover:bg-on-surface-variant/10",
-    blue: "bg-primary/10 text-primary border-primary/20",
-    green: "bg-tertiary/10 text-tertiary border-tertiary/20",
-    amber: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-    red: "bg-error/10 text-error border-error/20",
-    purple: "bg-secondary/10 text-secondary border-secondary/20",
-  };
-  return (
-    <span
-      className={cls(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider transition-all duration-300",
-        tones[tone] || tones.gray
-      )}
-    >
-      <span className="h-1 w-1 rounded-full bg-current opacity-40"></span>
-      {children}
-    </span>
-  );
-}
-
-function Modal({ isOpen, onClose, title, children, footer, maxWidth = "max-w-2xl" }) {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-      <div
-        className="fixed inset-0 bg-surface/80 backdrop-blur-md transition-opacity duration-300"
-        onClick={onClose}
-      />
-      <div className={cls(
-        "relative w-full overflow-hidden rounded-[2.5rem] border border-outline-variant/10 bg-surface-container shadow-2xl transition-all duration-500 animate-in fade-in zoom-in slide-in-from-bottom-8",
-        maxWidth
-      )}>
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-outline-variant/5 px-8 py-6">
-          <h3 className="text-xl font-black tracking-tight text-on-surface uppercase">
-            {title}
-          </h3>
-          <button
-            onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-on-surface/5 text-on-surface-variant transition-all hover:bg-error/10 hover:text-error"
-          >
-            <span className="material-symbols-outlined">close</span>
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="max-h-[70vh] overflow-y-auto p-8 custom-scrollbar">
-          {children}
-        </div>
-
-        {/* Footer */}
-        {footer && (
-          <div className="flex items-center justify-end gap-3 border-t border-outline-variant/5 bg-on-surface/[0.02] px-8 py-6">
-            {footer}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Section({ title, desc, children, right }) {
-  return (
-    <div className="group overflow-hidden rounded-[2rem] border border-outline-variant/10 bg-surface-container-lowest/40 p-6 shadow-sm backdrop-blur-md transition-all duration-500 hover:border-outline-variant/30 hover:shadow-xl hover:shadow-primary/5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-lg font-black tracking-tight text-on-surface">{title}</h3>
-          {desc && <p className="mt-1 text-xs font-bold text-on-surface-variant/60">{desc}</p>}
-        </div>
-        {right && <div className="shrink-0">{right}</div>}
-      </div>
-      <div className="mt-6">{children}</div>
-    </div>
-  );
-}
-
-function Button({ children, onClick, disabled, variant = "primary", className, type = "button" }) {
-  const styles = {
-    primary: "bg-primary text-on-primary shadow-lg shadow-primary/20 hover:bg-primary/90 hover:scale-[1.02] active:scale-[0.98]",
-    secondary: "bg-surface-container-high text-on-surface border border-outline-variant/20 hover:bg-surface-container-highest hover:border-outline-variant/40",
-    danger: "bg-error text-on-error shadow-lg shadow-error/20 hover:bg-error/90",
-    ghost: "bg-transparent text-on-surface hover:bg-on-surface/5 border-transparent",
-  };
-
-  return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className={cls(
-        "inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-2.5 text-xs font-black uppercase tracking-widest transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-40",
-        styles[variant],
-        className
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Input({ label, value, onChange, placeholder, type = "text", disabled }) {
-  return (
-    <label className="group flex flex-col gap-1.5">
-      <span className="ml-1 text-[11px] font-black uppercase tracking-wider text-on-surface-variant/70 transition-colors group-focus-within:text-primary">
-        {label}
-      </span>
-      <input
-        type={type}
-        value={value ?? ""}
-        placeholder={placeholder}
-        onChange={(v) => onChange(v.target.value)}
-        disabled={disabled}
-        className="rounded-2xl border border-outline-variant/20 bg-surface-container-lowest px-4 py-3 text-sm font-bold text-on-surface outline-none transition-all focus:border-primary/50 focus:ring-4 focus:ring-primary/5 disabled:bg-surface-container-low"
-      />
-    </label>
-  );
-}
-
-function Textarea({ label, value, onChange, placeholder, disabled }) {
-  return (
-    <label className="group flex flex-col gap-1.5">
-      <span className="ml-1 text-[11px] font-black uppercase tracking-wider text-on-surface-variant/70 transition-colors group-focus-within:text-primary">
-        {label}
-      </span>
-      <textarea
-        value={value ?? ""}
-        placeholder={placeholder}
-        onChange={(v) => onChange(v.target.value)}
-        disabled={disabled}
-        className="min-h-[120px] rounded-2xl border border-outline-variant/20 bg-surface-container-lowest px-4 py-3 text-sm font-bold text-on-surface outline-none transition-all focus:border-primary/50 focus:ring-4 focus:ring-primary/5 disabled:bg-surface-container-low"
-      />
-    </label>
-  );
-}
-
-function Select({ label, value, onChange, options, disabled }) {
-  return (
-    <label className="group flex flex-col gap-1.5">
-      <span className="ml-1 text-[11px] font-black uppercase tracking-wider text-on-surface-variant/70 transition-colors group-focus-within:text-primary">
-        {label}
-      </span>
-      <select
-        value={value ?? ""}
-        onChange={(v) => onChange(v.target.value)}
-        disabled={disabled}
-        className="rounded-2xl border border-outline-variant/20 bg-surface-container-lowest px-4 py-3 text-sm font-bold text-on-surface outline-none transition-all focus:border-primary/50 focus:ring-4 focus:ring-primary/5 disabled:bg-surface-container-low"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function Drawer({ open, title, onClose, children }) {
-  return (
-    <>
-      <div
-        className={cls(
-          "fixed inset-0 z-[100] bg-surface/40 backdrop-blur-md transition-opacity duration-500",
-          open ? "opacity-100" : "pointer-events-none opacity-0"
-        )}
-        onClick={onClose}
-      />
-      <div
-        className={cls(
-          "fixed inset-y-0 right-0 z-[110] flex w-full max-w-4xl flex-col bg-surface-container-lowest/90 shadow-2xl backdrop-blur-2xl transition-transform duration-500 ease-spring",
-          open ? "translate-x-0" : "translate-x-full"
-        )}
-      >
-        <div className="flex items-center justify-between border-b border-outline-variant/10 p-8">
-          <h2 className="text-3xl font-black tracking-tighter text-on-surface">{title}</h2>
-          <button onClick={onClose} className="flex h-12 w-12 items-center justify-center rounded-full border border-outline-variant/20 bg-surface-container-high transition hover:scale-110 active:scale-90">
-            <span className="material-symbols-outlined">close</span>
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-10 custom-scrollbar">{children}</div>
-      </div>
-    </>
-  );
-}
-
-function Tabs({ tab, setTab, items }) {
-  return (
-    <div className="flex overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-container-low p-1.5 shadow-inner">
-      {items.map((it) => {
-        const active = tab === it.key;
-        return (
-          <button
-            key={it.key}
-            onClick={() => setTab(it.key)}
-            className={cls(
-              "relative flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-[10px] font-black uppercase tracking-widest transition-all duration-500",
-              active
-                ? "bg-primary text-on-primary shadow-lg shadow-primary/20"
-                : "text-on-surface-variant hover:bg-on-surface/5"
-            )}
-            type="button"
-          >
-            {it.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export default function SiniestrosPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   const [casos, setCasos] = useState([]);
+  const [meta, setMeta] = useState({ total: 0, paginas: 1, pagina: 1 });
+  const [pagina, setPagina] = useState(1);
+  const [limite, setLimite] = useState(20);
+
   const [query, setQuery] = useState("");
   const [tipoFilter, setTipoFilter] = useState("ALL");
   const [estadoFilter, setEstadoFilter] = useState("ALL");
@@ -370,12 +173,25 @@ export default function SiniestrosPage() {
     notasFacturacion: "",
   });
 
-  const refresh = async () => {
+  const refresh = async (q = query) => {
     setError(null);
     setLoading(true);
     try {
-      const data = await apiGet("/siniestros");
-      setCasos(Array.isArray(data) ? data : []);
+      const p = new URLSearchParams();
+      p.append("pagina", pagina);
+      p.append("limite", limite);
+      if (q) p.append("q", q);
+      p.append("modo", stageTab);
+      if (tipoFilter !== "ALL") p.append("ramo", tipoFilter);
+      if (estadoFilter !== "ALL") p.append("estado", estadoFilter);
+
+      const res = await apiGet(`/siniestros?${p.toString()}`);
+      if (res && res.data) {
+        setCasos(res.data);
+        if (res.meta) setMeta(res.meta);
+      } else {
+        setCasos(Array.isArray(res) ? res : []);
+      }
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || "Error cargando siniestros");
     } finally {
@@ -384,34 +200,17 @@ export default function SiniestrosPage() {
   };
 
   useEffect(() => {
-    refresh();
-  }, []);
+    const handler = setTimeout(() => {
+      refresh(query);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [query, pagina, limite, stageTab, tipoFilter, estadoFilter]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+  useEffect(() => {
+    setPagina(1);
+  }, [stageTab, tipoFilter, estadoFilter]);
 
-    return (casos || [])
-      .filter((c) => {
-        // ✅ filtro “cerrados”
-        const isCerrado = c.etapa === "CERRADO" || c.estado === "CERRADO";
-        if (stageTab === "ABIERTOS" && isCerrado) return false;
-        if (stageTab === "CERRADOS" && !isCerrado) return false;
-
-        if (tipoFilter !== "ALL" && c.tipo !== tipoFilter) return false;
-        if (estadoFilter !== "ALL" && c.estado !== estadoFilter) return false;
-
-        if (!q) return true;
-        return (
-          String(c.folio ?? "").includes(q) ||
-          String(c.nombreCliente ?? "").toLowerCase().includes(q) ||
-          String(c.rutCliente ?? "").toLowerCase().includes(q) ||
-          String(c.direccion ?? "").toLowerCase().includes(q) ||
-          String(c.companiaSeguro ?? "").toLowerCase().includes(q) ||
-          String(c.numeroSiniestro ?? "").toLowerCase().includes(q)
-        );
-      })
-      .sort((a, b) => new Date(b.actualizadoEn) - new Date(a.actualizadoEn));
-  }, [casos, query, stageTab, tipoFilter, estadoFilter]);
+  const filtered = casos;
 
   const hydrateFactForm = (full) => {
     const toDateInput = (d) => {
@@ -825,20 +624,19 @@ export default function SiniestrosPage() {
         </div>
       ) : null}
 
+      <div className="relative z-0 mx-4 mt-8 md:mx-8">
+        <Tabs
+          items={[
+            { key: "ABIERTOS", label: "En Liquidación / Abiertos" },
+            { key: "CERRADOS", label: "Finalizados / Cerrados" },
+          ]}
+          value={stageTab}
+          onChange={setStageTab}
+        />
+      </div>
+
       {/* ✅ Barra de Filtros Premium */}
       <div className="mb-10 grid gap-6 rounded-[2.5rem] border border-outline-variant/10 bg-surface-container-low/40 shadow-sm backdrop-blur-xl md:grid-cols-6 lg:grid-cols-12">
-        <div className="flex flex-col gap-1.5 md:col-span-2 lg:col-span-3">
-          <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-on-surface-variant/50">Estado Etapa</span>
-          <Tabs
-            tab={stageTab}
-            setTab={(v) => setStageTab(v)}
-            items={[
-              { key: "ABIERTOS", label: "Abiertos" },
-              { key: "CERRADOS", label: "Cerrados" },
-            ]}
-          />
-        </div>
-
         <div className="md:col-span-3 lg:col-span-4">
           <Input
             label="Búsqueda Inteligente"
@@ -1002,6 +800,16 @@ export default function SiniestrosPage() {
               </button>
             ))}
           </div>
+        )}
+
+        {/* Footer Paginación */}
+        {filtered.length > 0 && (
+          <footer className="mt-8 flex flex-col md:flex-row items-center justify-between border-t border-outline-variant/10 pt-8 gap-4 px-2">
+            <p className="text-sm text-on-surface-variant font-medium">
+              Mostrando página <span className="text-on-surface font-bold">{meta.pagina}</span> de <span className="text-on-surface font-bold">{meta.paginas}</span> ({meta.total} casos en total)
+            </p>
+            <Pagination current={meta.pagina} total={meta.paginas} onPageChange={setPagina} />
+          </footer>
         )}
       </div>
 

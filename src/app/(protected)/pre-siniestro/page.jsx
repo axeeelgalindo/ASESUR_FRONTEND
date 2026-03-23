@@ -54,6 +54,16 @@ const OPS_REQ_PASO_SINIESTRO_DOCS = [
   "CONTRATO_ASESORIA",
 ];
 
+import { Pill } from "@/components/ui/Pill";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Section } from "@/components/ui/Section";
+import { Drawer } from "@/components/ui/Drawer";
+import { Modal } from "@/components/ui/Modal";
+import { Pagination } from "@/components/ui/Pagination";
+
 function cls(...s) {
   return s.filter(Boolean).join(" ");
 }
@@ -69,174 +79,6 @@ const fmt = (d) => {
   }).format(new Date(d));
 };
 
-function Pill({ children, tone = "gray" }) {
-  const tones = {
-    gray: "bg-surface-container-high text-on-surface-variant border-outline-variant/20",
-    blue: "bg-primary/10 text-primary border-primary/20",
-    green: "bg-tertiary-container text-on-tertiary-container border-tertiary/20",
-    amber: "bg-secondary/10 text-secondary border-secondary/20",
-    red: "bg-error-container text-on-error-container border-error/20",
-    purple: "bg-tertiary-fixed-dim text-on-tertiary-fixed border-tertiary-fixed/20",
-  };
-  return (
-    <span
-      className={cls(
-        "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border",
-        tones[tone] || tones.gray
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-function Section({ title, desc, children, right }) {
-  return (
-    <div className="rounded-[2rem] border border-outline-variant/30 bg-surface-container-lowest p-6 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h3 className="text-xl font-black tracking-tight text-on-surface">{title}</h3>
-          {desc && <p className="mt-1 text-sm font-medium text-on-surface-variant/70">{desc}</p>}
-        </div>
-        {right && <div className="shrink-0">{right}</div>}
-      </div>
-      <div className="mt-8">{children}</div>
-    </div>
-  );
-}
-
-function Button({
-  children,
-  onClick,
-  disabled,
-  variant = "primary",
-  className,
-}) {
-  const v = {
-    primary: "bg-primary text-on-primary hover:bg-primary/90 shadow-lg shadow-primary/10 border-transparent",
-    secondary: "bg-surface-container-high text-on-surface hover:bg-surface-container-highest border-outline-variant/30",
-    danger: "bg-error text-on-error hover:bg-error/90 shadow-lg shadow-error/10 border-transparent",
-    ghost: "text-on-surface-variant hover:bg-surface-container hover:text-on-surface border-transparent",
-  }[variant];
-
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={cls(
-        "inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100",
-        v,
-        className
-      )}
-      type="button"
-    >
-      {children}
-    </button>
-  );
-}
-
-function Input({ label, value, onChange, placeholder, type = "text", disabled = false }) {
-  return (
-    <label className={cls("flex flex-col gap-1.5", disabled && "opacity-50")}>
-      {label && <span className="ml-1 text-[11px] font-black uppercase tracking-wider text-on-surface-variant/70">{label}</span>}
-      <input
-        type={type}
-        value={value ?? ""}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="h-11 w-full rounded-xl border border-outline-variant/20 bg-surface-container-low px-4 text-sm font-bold text-on-surface placeholder:text-on-surface-variant/40 outline-none transition focus:border-primary/50 focus:ring-4 focus:ring-primary/5 shadow-sm disabled:bg-surface-container-highest disabled:cursor-not-allowed"
-      />
-    </label>
-  );
-}
-
-function Select({ label, value, onChange, options }) {
-  return (
-    <label className="flex flex-col gap-1.5 text-sm font-semibold text-on-surface">
-      <span className="ml-1 text-[11px] font-black uppercase tracking-wider text-on-surface-variant/70">{label}</span>
-      <select
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-11 w-full rounded-xl border border-outline-variant/20 bg-surface-container-low px-4 text-sm font-bold text-on-surface outline-none transition focus:border-primary/50 focus:ring-4 focus:ring-primary/5 shadow-sm"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function Checkbox({ checked, onChange, label, disabled = false }) {
-  return (
-    <label className={cls("flex items-center gap-2 text-sm font-bold text-on-surface select-none cursor-pointer", disabled && "opacity-50 cursor-not-allowed")}>
-      <input
-        type="checkbox"
-        checked={Boolean(checked)}
-        onChange={(e) => onChange(e.target.checked)}
-        disabled={disabled}
-        className="h-5 w-5 rounded border-outline-variant/30 bg-surface-container-low text-primary focus:ring-primary/20 accent-primary"
-      />
-      <span>{label}</span>
-    </label>
-  );
-}
-
-function Modal({ open, title, children, onClose, footer }) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-surface-container-lowest/80 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-2xl overflow-hidden rounded-[2.5rem] border border-outline-variant/30 bg-surface shadow-2xl animate-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between border-b border-outline-variant/10 px-8 py-6">
-          <h2 className="text-2xl font-black tracking-tight text-on-surface">{title}</h2>
-          <button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-surface-container">
-            <span className="material-symbols-outlined text-on-surface-variant">close</span>
-          </button>
-        </div>
-        <div className="px-8 py-6 max-h-[70vh] overflow-y-auto">{children}</div>
-        {footer && <div className="flex items-center justify-end gap-3 border-t border-outline-variant/10 bg-surface-container-lowest/50 px-8 py-6">{footer}</div>}
-      </div>
-    </div>
-  );
-}
-
-function Drawer({ open, title, onClose, children }) {
-  return (
-    <>
-      <div
-        className={cls(
-          "fixed inset-0 z-[100] bg-surface-container-lowest/40 blur-sm transition-opacity duration-300",
-          open ? "opacity-100" : "pointer-events-none opacity-0"
-        )}
-        onClick={onClose}
-      />
-      <div
-        className={cls(
-          "fixed inset-y-0 right-0 z-[101] w-full max-w-3xl transform bg-surface shadow-2xl transition-transform duration-500 ease-out",
-          open ? "translate-x-0" : "translate-x-full"
-        )}
-      >
-        <div className="flex h-full flex-col">
-          <div className="flex items-center justify-between border-b border-outline-variant/10 bg-surface-container-low px-8 py-6">
-            <h2 className="text-2xl font-black tracking-tight text-on-surface">{title}</h2>
-            <button
-              onClick={onClose}
-              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-container-high text-on-surface-variant transition hover:bg-surface-container-highest hover:text-on-surface"
-            >
-              <span className="material-symbols-outlined">close</span>
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-8">{children}</div>
-        </div>
-      </div>
-    </>
-  );
-}
-
 export default function PreSiniestroPage() {
   const { data: session } = useSession();
   const userRole = session?.user?.rol || null;
@@ -248,6 +90,9 @@ export default function PreSiniestroPage() {
   const [error, setError] = useState(null);
 
   const [casos, setCasos] = useState([]);
+  const [meta, setMeta] = useState({ total: 0, paginas: 1, pagina: 1 });
+  const [pagina, setPagina] = useState(1);
+  const [limite, setLimite] = useState(20);
 
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useState("grid"); // 'grid' or 'list'
@@ -339,12 +184,25 @@ export default function PreSiniestroPage() {
     }
   };
 
-  const refresh = async () => {
+  const refresh = async (q = query) => {
     setError(null);
     setLoading(true);
     try {
-      const data = await apiGet("/pre-siniestro");
-      setCasos(Array.isArray(data) ? data : []);
+      const p = new URLSearchParams();
+      p.append("pagina", pagina);
+      p.append("limite", limite);
+      if (q) p.append("q", q);
+      if (tipoFilter !== "ALL") p.append("ramo", tipoFilter);
+      if (estadoFilter !== "ALL") p.append("estado", estadoFilter);
+      if (flagFilter !== "ALL") p.append("flag", flagFilter);
+
+      const res = await apiGet(`/pre-siniestro?${p.toString()}`);
+      if (res && res.data) {
+        setCasos(res.data);
+        if (res.meta) setMeta(res.meta);
+      } else {
+        setCasos(Array.isArray(res) ? res : []);
+      }
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || "Error cargando");
     } finally {
@@ -353,48 +211,17 @@ export default function PreSiniestroPage() {
   };
 
   useEffect(() => {
-    refresh();
-  }, []);
+    const handler = setTimeout(() => {
+      refresh(query);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [query, pagina, limite, tipoFilter, estadoFilter, flagFilter]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return casos
-      .filter((c) => {
-        if (tipoFilter !== "ALL" && c.tipo !== tipoFilter) return false;
-        if (estadoFilter !== "ALL" && c.estado !== estadoFilter) return false;
+  useEffect(() => {
+    setPagina(1);
+  }, [tipoFilter, estadoFilter, flagFilter]);
 
-        if (flagFilter === "VB_PENDIENTE") {
-          if (c.vbPreFecha) return false;
-        } else if (flagFilter === "PEND_AUT") {
-          if (c.estado !== "PENDIENTE_AUTORIZACION") return false;
-        } else if (flagFilter === "RECHAZADO") {
-          if (c.estado !== "RECHAZADO") return false;
-        } else if (flagFilter === "AUTORIZADO") {
-          if (c.estado !== "AUTORIZADO") return false;
-        }
-
-        if (!q) return true;
-        return (
-          String(c.folio ?? "").includes(q) ||
-          String(c.nombreCliente ?? "")
-            .toLowerCase()
-            .includes(q) ||
-          String(c.rutCliente ?? "")
-            .toLowerCase()
-            .includes(q) ||
-          String(c.direccion ?? "")
-            .toLowerCase()
-            .includes(q) ||
-          String(c.companiaSeguro ?? "")
-            .toLowerCase()
-            .includes(q) ||
-          String(c.numeroSiniestro ?? "")
-            .toLowerCase()
-            .includes(q)
-        );
-      })
-      .sort((a, b) => new Date(b.creadoEn) - new Date(a.creadoEn));
-  }, [casos, query, tipoFilter, estadoFilter, flagFilter]);
+  const filtered = casos;
 
   const openCaso = async (c) => {
     setError(null);
@@ -1113,6 +940,16 @@ export default function PreSiniestroPage() {
             </div>
           </div>
         )}
+
+        {/* Footer Paginación */}
+        {filtered.length > 0 && (
+          <footer className="mt-8 flex flex-col md:flex-row items-center justify-between border-t border-outline-variant/10 pt-8 gap-4 px-2">
+            <p className="text-sm text-on-surface-variant font-medium">
+              Mostrando página <span className="text-on-surface font-bold">{meta.pagina}</span> de <span className="text-on-surface font-bold">{meta.paginas}</span> ({meta.total} casos en total)
+            </p>
+            <Pagination current={meta.pagina} total={meta.paginas} onPageChange={setPagina} />
+          </footer>
+        )}
       </div>
 
       {/* MODALES */}
@@ -1667,6 +1504,6 @@ export default function PreSiniestroPage() {
           </div>
         )}
       </Drawer>
-    </div>
+    </div >
   );
 }

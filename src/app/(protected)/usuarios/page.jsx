@@ -15,6 +15,8 @@ const RolLabel = {
   INSPECTOR: "Inspector",
   ESTADISTICO: "Estadístico",
   SUPERADMIN: "Superadmin",
+  GERENTE: "Gerente",
+  MASTER: "Master",
 };
 
 const RolOptions = [
@@ -26,6 +28,8 @@ const RolOptions = [
   { value: "INSPECTOR", label: "Inspector" },
   { value: "ESTADISTICO", label: "Estadístico" },
   { value: "SUPERADMIN", label: "Superadmin" },
+  { value: "GERENTE", label: "Gerente" },
+  { value: "MASTER", label: "Master" },
 ];
 
 const RolTone = {
@@ -36,6 +40,8 @@ const RolTone = {
   INSPECTOR: "purple",
   CAPTADOR: "gray",
   ESTADISTICO: "gray",
+  GERENTE: "amber",
+  MASTER: "red",
 };
 
 function cls(...s) {
@@ -450,7 +456,7 @@ export default function UsuariosPage() {
 
               <div className="pt-6 flex flex-col gap-3">
                 <Button onClick={handleSave} disabled={busy} className="w-full h-12">Guardar Cambios</Button>
-                {session?.user?.rol === "SUPERADMIN" && (
+                {(session?.user?.rol === "SUPERADMIN" || session?.user?.rol === "MASTER") && (
                   <Button variant="danger" onClick={handleDelete} disabled={busy} className="w-full h-12">Eliminar Definitivamente</Button>
                 )}
                 <Button variant="secondary" onClick={() => setOpenDetail(false)} disabled={busy} className="w-full h-12">Cancelar</Button>

@@ -1,29 +1,39 @@
 // src/components/ui/Tabs.jsx
-export default function Tabs({ items, value, onChange }) {
-    return (
-      <div style={{ display: "flex", gap: 14, borderBottom: "1px solid #E5E7EB" }}>
-        {items.map((it) => {
-          const active = it.value === value;
-          return (
-            <button
-              key={it.value}
-              onClick={() => onChange(it.value)}
-              style={{
-                background: "transparent",
-                border: "none",
-                padding: "10px 0",
-                cursor: "pointer",
-                color: active ? "#0F172A" : "#64748B",
-                fontWeight: active ? 700 : 600,
-                borderBottom: active ? "2px solid #0F172A" : "2px solid transparent",
-                marginBottom: -1,
-              }}
-            >
-              {it.label}
-            </button>
-          );
-        })}
-      </div>
-    );
-  }
-  
+// src/components/ui/Tabs.jsx
+import React from 'react';
+
+function cls(...s) {
+  return s.filter(Boolean).join(" ");
+}
+
+export function Tabs({ tab, setTab, items, value, onChange }) {
+  // Support both APIs (tab/setTab vs value/onChange)
+  const activeValue = value !== undefined ? value : tab;
+  const handleChange = onChange || setTab;
+
+  return (
+    <div className="flex overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-container-low p-1.5 shadow-inner">
+      {items.map((it) => {
+        const itemKey = it.value !== undefined ? it.value : it.key;
+        const active = activeValue === itemKey;
+        return (
+          <button
+            key={itemKey}
+            onClick={() => handleChange(itemKey)}
+            className={cls(
+              "relative flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-[10px] font-black uppercase tracking-widest transition-all duration-500",
+              active
+                ? "bg-primary text-on-primary shadow-lg shadow-primary/20"
+                : "text-on-surface-variant hover:bg-on-surface/5"
+            )}
+            type="button"
+          >
+            {it.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export default Tabs;

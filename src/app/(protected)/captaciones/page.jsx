@@ -4,29 +4,14 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { apiGet, apiPatch, fileUrl } from "@/lib/api";
 import { useSession } from "next-auth/react";
 
+import { Pill } from "@/components/ui/Pill";
+import { Button } from "@/components/ui/Button";
+import { Drawer } from "@/components/ui/Drawer";
+import { Section } from "@/components/ui/Section";
+import { Pagination } from "@/components/ui/Pagination";
+
 function cls(...s) {
   return s.filter(Boolean).join(" ");
-}
-
-function Pill({ children, tone = "gray" }) {
-  const tones = {
-    gray: "bg-surface-container-high text-on-surface-variant border-outline-variant/20",
-    blue: "bg-primary/10 text-primary border-primary/20",
-    green: "bg-tertiary-container text-on-tertiary-container border-tertiary/20",
-    amber: "bg-secondary/10 text-secondary border-secondary/20",
-    red: "bg-error-container text-on-error-container border-error/20",
-    purple: "bg-tertiary-fixed-dim text-on-tertiary-fixed border-tertiary-fixed/20",
-  };
-  return (
-    <span
-      className={cls(
-        "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border",
-        tones[tone] || tones.gray
-      )}
-    >
-      {children}
-    </span>
-  );
 }
 
 const TipoCasoLabel = {
@@ -53,6 +38,10 @@ export default function CaptacionesPage() {
   const [error, setError] = useState(null);
 
   const [casos, setCasos] = useState([]);
+  const [meta, setMeta] = useState({ total: 0, paginas: 1, pagina: 1 });
+  const [pagina, setPagina] = useState(1);
+  const [limite, setLimite] = useState(20);
+
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useState("grid"); // 'grid' or 'list'
 
@@ -60,6 +49,7 @@ export default function CaptacionesPage() {
   const [filterEstado, setFilterEstado] = useState("");
   const [filterRamo, setFilterRamo] = useState("");
   const [filterFecha, setFilterFecha] = useState(""); // "" or "hoy" or "semana"
+
 
   const [openDetail, setOpenDetail] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -72,69 +62,45 @@ export default function CaptacionesPage() {
   const canCreate = ["CAPTADOR", "ASESOR", "OPERACIONES", "SUPERADMIN"].includes(userRole);
   const canAssignAsesor = ["OPERACIONES", "SUPERADMIN", "FINANZAS"].includes(userRole);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (q = query) => {
     setError(null);
     setLoading(true);
     try {
-      const data = await apiGet("/captaciones");
-      setCasos(Array.isArray(data) ? data : []);
+      const p = new URLSearchParams();
+      p.append("pagina", pagina);
+      p.append("limite", limite);
+      if (q) p.append("q", q);
+      if (filterEstado) p.append("estado", filterEstado);
+      if (filterRamo) p.append("ramo", filterRamo);
+      if (filterFecha) p.append("fecha", filterFecha);
+
+      const res = await apiGet(`/captaciones?${p.toString()}`);
+      if (res && res.data) {
+        setCasos(res.data);
+        if (res.meta) setMeta(res.meta);
+      } else {
+        setCasos(Array.isArray(res) ? res : []);
+      }
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || "Error cargando captaciones");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [pagina, limite, filterEstado, filterRamo, filterFecha]);
+
+  // Debounced Search Effect
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      refresh(query);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [query, refresh]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    setPagina(1); // Reset page on filter change
+  }, [filterEstado, filterRamo, filterFecha]);
 
-  const filtered = useMemo(() => {
-    let result = [...casos];
-
-    // Search
-    const q = query.trim().toLowerCase();
-    if (q) {
-      result = result.filter((c) =>
-        String(c.folio ?? "").includes(q) ||
-        String(c.nombreCliente ?? "").toLowerCase().includes(q) ||
-        String(c.rutCliente ?? "").toLowerCase().includes(q) ||
-        String(c.direccion ?? "").toLowerCase().includes(q)
-      );
-    }
-
-    // Status Filter
-    if (filterEstado) {
-      result = result.filter(c => {
-        const isAsignado = !!c.asesorId;
-        return filterEstado === "ASIGNADO" ? isAsignado : !isAsignado;
-      });
-    }
-
-    // Branch (Ramo) Filter
-    if (filterRamo) {
-      result = result.filter(c => c.tipo === filterRamo);
-    }
-
-    // Date Filter
-    if (filterFecha) {
-      const now = new Date();
-      result = result.filter(c => {
-        const d = new Date(c.creadoEn || c.actualizadoEn);
-        if (filterFecha === "hoy") {
-          return d.toDateString() === now.toDateString();
-        }
-        if (filterFecha === "semana") {
-          const weekAgo = new Date();
-          weekAgo.setDate(now.getDate() - 7);
-          return d >= weekAgo;
-        }
-        return true;
-      });
-    }
-
-    return result.sort((a, b) => new Date(b.actualizadoEn) - new Date(a.actualizadoEn));
-  }, [casos, query, filterEstado, filterRamo, filterFecha]);
+  const filtered = casos;
 
   const openCaso = async (c) => {
     setError(null);
@@ -389,19 +355,11 @@ export default function CaptacionesPage() {
       )}
 
       {/* Footer */}
-      <footer className="mt-12 flex items-center justify-between border-t border-outline-variant/10 pt-8">
+      <footer className="mt-12 flex flex-col md:flex-row items-center justify-between border-t border-outline-variant/10 pt-8 gap-4">
         <p className="text-sm text-on-surface-variant font-medium">
-          Mostrando <span className="text-on-surface font-bold">{filtered.length}</span> captaciones
+          Mostrando página <span className="text-on-surface font-bold">{meta.pagina}</span> de <span className="text-on-surface font-bold">{meta.paginas}</span> ({meta.total} captaciones en total)
         </p>
-        <div className="flex items-center gap-2">
-          <button className="w-10 h-10 flex items-center justify-center rounded-xl bg-surface-container-high text-on-surface opacity-50 cursor-not-allowed">
-            <span className="material-symbols-outlined">chevron_left</span>
-          </button>
-          <button className="w-10 h-10 flex items-center justify-center rounded-xl bg-surface-container-highest text-secondary font-bold border border-secondary/20">1</button>
-          <button className="w-10 h-10 flex items-center justify-center rounded-xl bg-surface-container-high text-on-surface opacity-50 cursor-not-allowed">
-            <span className="material-symbols-outlined">chevron_right</span>
-          </button>
-        </div>
+        <Pagination current={meta.pagina} total={meta.paginas} onPageChange={setPagina} />
       </footer>
 
       {/* Detail Drawer */}
