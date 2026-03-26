@@ -82,12 +82,14 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }) {
       {/* Navigation — filtrado por rol */}
       <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
         {/* Dashboard: todos menos CAPTADOR */}
-        {userRole !== "CAPTADOR" && (
+        {userRole !== "CAPTADOR" && userRole !== "ASESOR" && (
           <NavItem href="/dashboard" icon="dashboard" label="Dashboard" isCollapsed={isCollapsed} />
         )}
 
         {/* Captaciones: todos */}
-        <NavItem href="/captaciones" icon="payments" label="Captaciones" isCollapsed={isCollapsed} />
+        {userRole !== "ASESOR" && (
+          <NavItem href="/captaciones" icon="payments" label="Captaciones" isCollapsed={isCollapsed} />
+        )}
 
         {/* Pre-Siniestros: no CAPTADOR */}
         {userRole !== "CAPTADOR" && (
@@ -95,7 +97,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }) {
         )}
 
         {/* Siniestros: no CAPTADOR */}
-        {userRole !== "CAPTADOR" && (
+        {userRole !== "CAPTADOR" && userRole !== "ASESOR" && (
           <NavItem href="/siniestros" icon="emergency" label="Siniestros" isCollapsed={isCollapsed} />
         )}
 

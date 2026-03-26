@@ -11,6 +11,10 @@ export default async function Home() {
 
   const role = (session.user?.rol || "").toUpperCase();
 
+  if (role === "ASESOR") {
+    redirect("/pre-siniestro");
+  }
+
   if (role === "CAPTADOR") {
     redirect("/captaciones");
   }

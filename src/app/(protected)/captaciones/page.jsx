@@ -151,14 +151,6 @@ export default function CaptacionesPage() {
             Gestión integral de cartera y nuevas captaciones en terreno.
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          {canCreate && (
-            <button className="bg-secondary text-on-secondary font-bold px-6 py-3 rounded-xl flex items-center gap-2 transition-transform active:scale-95 shadow-lg shadow-secondary/10">
-              <span className="material-symbols-outlined">add</span>
-              Nueva Captación
-            </button>
-          )}
-        </div>
       </header>
 
       {/* Filter Bar */}
