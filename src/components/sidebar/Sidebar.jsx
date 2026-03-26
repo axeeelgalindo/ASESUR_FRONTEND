@@ -79,54 +79,62 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }) {
         </button>
       </div>
 
-      {/* Navigation */}
+      {/* Navigation — filtrado por rol */}
       <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
-        <NavItem href="/dashboard" icon="dashboard" label="Dashboard" isCollapsed={isCollapsed} />
-        <NavItem href="/captaciones" icon="payments" label="Captaciones" isCollapsed={isCollapsed} />
-        <NavItem href="/pre-siniestro" icon="fact_check" label="Pre-Siniestros" isCollapsed={isCollapsed} />
-        <NavItem href="/siniestros" icon="emergency" label="Siniestros" isCollapsed={isCollapsed} />
+        {/* Dashboard: todos menos CAPTADOR */}
+        {userRole !== "CAPTADOR" && (
+          <NavItem href="/dashboard" icon="dashboard" label="Dashboard" isCollapsed={isCollapsed} />
+        )}
 
+        {/* Captaciones: todos */}
+        <NavItem href="/captaciones" icon="payments" label="Captaciones" isCollapsed={isCollapsed} />
+
+        {/* Pre-Siniestros: no CAPTADOR */}
+        {userRole !== "CAPTADOR" && (
+          <NavItem href="/pre-siniestro" icon="fact_check" label="Pre-Siniestros" isCollapsed={isCollapsed} />
+        )}
+
+        {/* Siniestros: no CAPTADOR */}
+        {userRole !== "CAPTADOR" && (
+          <NavItem href="/siniestros" icon="emergency" label="Siniestros" isCollapsed={isCollapsed} />
+        )}
+
+        {/* Historial: solo roles avanzados */}
+        {!["CAPTADOR", "ASESOR"].includes(userRole) && (
+          <NavItem href="/historial" icon="history" label="Historial" isCollapsed={isCollapsed} />
+        )}
+
+        {/* Usuarios y Configuración: exclusivo MASTER */}
         {userRole === "MASTER" && (
           <NavItem href="/usuarios" icon="group" label="Usuarios" isCollapsed={isCollapsed} />
         )}
         {userRole === "MASTER" && (
           <NavItem href="/configuracion" icon="settings" label="Configuración" isCollapsed={isCollapsed} />
         )}
-        <NavItem href="/historial" icon="history" label="Historial" isCollapsed={isCollapsed} />
       </nav>
 
-      {/* User card */}
-      <div className="mt-auto px-4 pt-4">
-        <div className={`bg-surface-container-high rounded-xl p-4 mb-4 transition-all duration-300 ${isCollapsed ? "p-2 flex flex-col items-center" : ""}`}>
-          <div className={`flex items-center gap-3 mb-3 ${isCollapsed ? "mb-1" : ""}`}>
-            <div className="relative flex-shrink-0">
-              <div className="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center text-primary font-bold">
-                {initials}
-              </div>
-              <span className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-surface-container-high rounded-full"></span>
+      {/* User card (Variation 1: Minimalist Template) */}
+      <div className="mt-auto px-2 pb-4">
+        <div className={`bg-surface-container-high p-4 rounded-xl transition-all duration-300 ${isCollapsed ? "flex flex-col items-center gap-4" : "flex items-center justify-between group"}`}>
+          <div className={`flex items-center gap-4 ${isCollapsed ? "flex-col" : ""}`}>
+            <div className="relative w-12 h-12 rounded-lg flex-shrink-0 bg-primary-container text-primary flex items-center justify-center font-bold text-lg overflow-hidden border border-outline-variant/10 shadow-inner">
+              {initials}
+              <span className="absolute bottom-1 right-1 w-1.5 h-1.5 bg-green-100 border border-surface-container-low rounded-full"></span>
             </div>
             {!isCollapsed && (
-              <div className="overflow-hidden">
-                <p className="text-sm font-bold truncate text-on-surface" title={userName}>{userName}</p>
-                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-tertiary-container text-on-tertiary-container">
-                  {userRole}
-                </span>
+              <div className="flex flex-col overflow-hidden">
+                <span className="text-on-surface font-semibold text-xs leading-tight truncate" title={userName}>{userName}</span>
+                <span className="text-on-surface-variant text-xs font-medium truncate">{userRole}</span>
               </div>
             )}
           </div>
-          <div className={`flex flex-col gap-1 ${isCollapsed ? "items-center" : ""}`}>
-            <Link href="/perfil" className="flex items-center gap-2 text-on-surface-variant hover:text-on-surface text-xs py-1 transition-colors">
-              <span className="material-symbols-outlined text-base">account_circle</span>
-              {!isCollapsed && <span>Perfil</span>}
-            </Link>
-            <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="flex items-center gap-2 text-error/80 hover:text-error text-xs py-1 transition-colors w-full text-left"
-            >
-              <span className="material-symbols-outlined text-base">logout</span>
-              {!isCollapsed && <span>Salir</span>}
-            </button>
-          </div>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="w-10 h-10 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-bright hover:text-on-surface transition-colors active:scale-90 shrink-0"
+            title="Cerrar Sesión"
+          >
+            <span className="material-symbols-outlined text-lg">logout</span>
+          </button>
         </div>
       </div>
     </aside>

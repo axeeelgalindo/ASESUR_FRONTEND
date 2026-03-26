@@ -4,8 +4,8 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("superadmin@asesur.cl");
-  const [password, setPassword] = useState("123456");
+  const [email, setEmail] = useState("cribortech@asesur.com");
+  const [password, setPassword] = useState("cribortech2026");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -26,41 +26,41 @@ export default function LoginPage() {
       return;
     }
 
-    // éxito
-    window.location.href = "/dashboard";
+    // éxito - redirigir a la raíz para que la lógica de roles decida el destino
+    window.location.href = "/";
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-      <div style={{ width: 420, border: "1px solid #e5e7eb", borderRadius: 14, padding: 24, background: "white" }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>ASESUR</h1>
-        <p style={{ color: "#6b7280", marginBottom: 18 }}>Inicia sesión para continuar</p>
+    <div className="min-h-screen grid place-items-center p-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white">
+      <div className="w-full max-w-[420px] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 bg-white dark:bg-slate-900 shadow-sm relative z-10">
+        <h1 className="text-2xl font-bold mb-2">ASESUR</h1>
+        <p className="text-slate-500 dark:text-slate-400 mb-6">Inicia sesión para continuar</p>
 
-        <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
+        <form onSubmit={onSubmit} className="grid gap-4">
           <div>
-            <label style={{ fontSize: 12, color: "#6b7280" }}>Email</label>
+            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 block">Email</label>
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               type="email"
-              style={{ width: "100%", padding: 10, border: "1px solid #e5e7eb", borderRadius: 10 }}
+              className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
               placeholder="correo@asesur.cl"
             />
           </div>
 
           <div>
-            <label style={{ fontSize: 12, color: "#6b7280" }}>Contraseña</label>
+            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 block">Contraseña</label>
             <input
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               type="password"
-              style={{ width: "100%", padding: 10, border: "1px solid #e5e7eb", borderRadius: 10 }}
+              className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
               placeholder="••••••••"
             />
           </div>
 
           {error ? (
-            <div style={{ background: "#fee2e2", color: "#991b1b", padding: 10, borderRadius: 10 }}>
+            <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-3 rounded-xl text-sm border border-red-100 dark:border-red-900/50">
               {error}
             </div>
           ) : null}
@@ -68,21 +68,13 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            style={{
-              padding: 12,
-              borderRadius: 12,
-              border: "none",
-              background: "#0f172a",
-              color: "white",
-              fontWeight: 600,
-              cursor: loading ? "not-allowed" : "pointer",
-            }}
+            className="w-full mt-2 p-3 rounded-xl bg-slate-900 dark:bg-blue-600 text-white font-semibold disabled:opacity-50 transition-colors hover:bg-slate-800 dark:hover:bg-blue-500"
           >
             {loading ? "Ingresando..." : "Ingresar"}
           </button>
 
-          <div style={{ fontSize: 12, color: "#6b7280" }}>
-            Password seed: <b>123456</b>
+          <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 text-center">
+            Password seed: <span className="font-bold text-slate-700 dark:text-slate-300">123456</span>
           </div>
         </form>
       </div>

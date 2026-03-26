@@ -1270,14 +1270,16 @@ export default function PreSiniestroPage() {
                   <span className="material-symbols-outlined text-sm">send</span>
                   {selected?.estado === "PENDIENTE_AUTORIZACION" ? "Escalado a Ops" : "Solicitar Autorización"}
                 </Button>
-                <Button
-                  className="flex-1 min-w-[180px]"
-                  onClick={autorizar}
-                  disabled={busy || !opsReadyToAuthorize || selected?.estado !== "PENDIENTE_AUTORIZACION"}
-                >
-                  <span className="material-symbols-outlined text-sm">bolt</span>
-                  Autorizar Siniestro
-                </Button>
+                {isOps && (
+                  <Button
+                    className="flex-1 min-w-[180px]"
+                    onClick={autorizar}
+                    disabled={busy || !opsReadyToAuthorize || selected?.estado !== "PENDIENTE_AUTORIZACION"}
+                  >
+                    <span className="material-symbols-outlined text-sm">bolt</span>
+                    Autorizar Siniestro
+                  </Button>
+                )}
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2 border-t border-outline-variant/10 pt-4">
@@ -1293,10 +1295,12 @@ export default function PreSiniestroPage() {
                   <span className="material-symbols-outlined text-sm">alternate_email</span>
                   Email Respaldo
                 </Button>
-                <Button variant="ghost" onClick={() => setOpenReject(true)} className="text-error hover:bg-error/10">
-                  <span className="material-symbols-outlined text-sm">cancel</span>
-                  Rechazar Caso
-                </Button>
+                {isOps && (
+                  <Button variant="ghost" onClick={() => setOpenReject(true)} className="text-error hover:bg-error/10">
+                    <span className="material-symbols-outlined text-sm">cancel</span>
+                    Rechazar Caso
+                  </Button>
+                )}
               </div>
             </Section>
 

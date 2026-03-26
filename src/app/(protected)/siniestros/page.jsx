@@ -624,78 +624,80 @@ export default function SiniestrosPage() {
         </div>
       ) : null}
 
-      <div className="relative z-0 mx-4 mt-8 md:mx-8">
-        <Tabs
-          items={[
-            { key: "ABIERTOS", label: "En Liquidación / Abiertos" },
-            { key: "CERRADOS", label: "Finalizados / Cerrados" },
-          ]}
-          value={stageTab}
-          onChange={setStageTab}
-        />
-      </div>
-
-      {/* ✅ Barra de Filtros Premium */}
-      <div className="mb-10 grid gap-6 rounded-[2.5rem] border border-outline-variant/10 bg-surface-container-low/40 shadow-sm backdrop-blur-xl md:grid-cols-6 lg:grid-cols-12">
-        <div className="md:col-span-3 lg:col-span-4">
-          <Input
-            label="Búsqueda Inteligente"
-            value={query}
-            onChange={setQuery}
-            placeholder="Compañía, cliente, RUT, folio..."
-          />
-        </div>
-
-        <div className="md:col-span-2 lg:col-span-2">
-          <Select
-            label="Tipo de Caso"
-            value={tipoFilter}
-            onChange={setTipoFilter}
-            options={[
-              { value: "ALL", label: "Todos" },
-              { value: "HIPOTECARIO_A", label: "Hipotecario" },
-              { value: "POLIZA_PARTICULAR_B", label: "Póliza Particular" },
+      {/* Area unificada: Tabs y Filtros */}
+      <div className="mb-10 mt-8 flex flex-col gap-6">
+        <div className="relative z-0">
+          <Tabs
+            items={[
+              { key: "ABIERTOS", label: "En Liquidación / Abiertos" },
+              { key: "CERRADOS", label: "Finalizados / Cerrados" },
             ]}
+            value={stageTab}
+            onChange={setStageTab}
           />
         </div>
 
-        <div className="md:col-span-2 lg:col-span-2">
-          <Select
-            label="Estado Liquidación"
-            value={estadoFilter}
-            onChange={setEstadoFilter}
-            options={[
-              { value: "ALL", label: "Todos" },
-              { value: "INSPECCION", label: "Inspección" },
-              { value: "PRESUPUESTO", label: "Presupuesto" },
-              { value: "ENVIO_INFORMACION", label: "Envío Información" },
-              { value: "APROBADA", label: "Aprobada" },
-              { value: "FACTURACION", label: "Facturación" },
-            ]}
-          />
-        </div>
+        <div className="grid gap-6 rounded-[2rem] border border-outline-variant/10 bg-surface-container-low/40 p-6 md:p-8 shadow-sm backdrop-blur-xl md:grid-cols-6 lg:grid-cols-12">
+          <div className="md:col-span-6 lg:col-span-5">
+            <Input
+              label="Búsqueda Inteligente"
+              value={query}
+              onChange={setQuery}
+              placeholder="Compañía, cliente, RUT, folio..."
+            />
+          </div>
 
-        <div className="flex flex-col gap-1.5 md:col-span-1 lg:col-span-1">
-          <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-on-surface-variant/50">Vista</span>
-          <div className="flex overflow-hidden rounded-xl border border-outline-variant/20 bg-surface-container-low p-1">
-            <button
-              onClick={() => setViewMode("grid")}
-              className={cls(
-                "flex flex-1 items-center justify-center py-1.5 transition-all outline-none",
-                viewMode === "grid" ? "bg-primary text-on-primary shadow-lg" : "text-on-surface-variant hover:bg-on-surface/5"
-              )}
-            >
-              <span className="material-symbols-outlined text-lg">grid_view</span>
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={cls(
-                "flex flex-1 items-center justify-center py-1.5 transition-all outline-none",
-                viewMode === "list" ? "bg-primary text-on-primary shadow-lg" : "text-on-surface-variant hover:bg-on-surface/5"
-              )}
-            >
-              <span className="material-symbols-outlined text-lg">view_list</span>
-            </button>
+          <div className="md:col-span-2 lg:col-span-3">
+            <Select
+              label="Tipo de Caso"
+              value={tipoFilter}
+              onChange={setTipoFilter}
+              options={[
+                { value: "ALL", label: "Todos" },
+                { value: "HIPOTECARIO_A", label: "Hipotecario" },
+                { value: "POLIZA_PARTICULAR_B", label: "Póliza Particular" },
+              ]}
+            />
+          </div>
+
+          <div className="md:col-span-2 lg:col-span-3">
+            <Select
+              label="Estado Liquidación"
+              value={estadoFilter}
+              onChange={setEstadoFilter}
+              options={[
+                { value: "ALL", label: "Todos" },
+                { value: "INSPECCION", label: "Inspección" },
+                { value: "PRESUPUESTO", label: "Presupuesto" },
+                { value: "ENVIO_INFORMACION", label: "Envío Información" },
+                { value: "APROBADA", label: "Aprobada" },
+                { value: "FACTURACION", label: "Facturación" },
+              ]}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5 md:col-span-2 lg:col-span-1">
+            <span className="ml-1 text-[10px] font-black uppercase tracking-widest text-on-surface-variant/50">Vista</span>
+            <div className="flex overflow-hidden rounded-xl border border-outline-variant/20 bg-surface-container-low p-1 h-12">
+              <button
+                onClick={() => setViewMode("grid")}
+                className={cls(
+                  "flex flex-1 items-center justify-center transition-all outline-none",
+                  viewMode === "grid" ? "bg-primary text-on-primary shadow-lg rounded-lg" : "text-on-surface-variant hover:bg-on-surface/5"
+                )}
+              >
+                <span className="material-symbols-outlined text-lg">grid_view</span>
+              </button>
+              <button
+                onClick={() => setViewMode("list")}
+                className={cls(
+                  "flex flex-1 items-center justify-center transition-all outline-none",
+                  viewMode === "list" ? "bg-primary text-on-primary shadow-lg rounded-lg" : "text-on-surface-variant hover:bg-on-surface/5"
+                )}
+              >
+                <span className="material-symbols-outlined text-lg">view_list</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

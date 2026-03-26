@@ -181,7 +181,7 @@ function Modal({ isOpen, onClose, title, children, footer, maxWidth = "max-w-2xl
 }
 
 export default function UsuariosPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -210,8 +210,29 @@ export default function UsuariosPage() {
   }, []);
 
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    if (status === "authenticated" && session?.user?.rol === "MASTER") {
+      fetchUsers();
+    }
+  }, [fetchUsers, status, session]);
+
+  if (status === "loading") {
+    return (
+      <div className="flex flex-col items-center justify-center py-40 text-on-surface-variant/30">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary/20 border-t-primary" />
+        <p className="mt-6 text-xs font-black uppercase tracking-[0.2em]">Verificando permisos...</p>
+      </div>
+    );
+  }
+
+  if (session?.user?.rol !== "MASTER") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] px-4 text-center animate-in fade-in zoom-in-95 duration-500">
+        <span className="material-symbols-outlined text-7xl text-error mb-6">lock</span>
+        <h2 className="text-3xl font-black text-on-surface mb-2 uppercase tracking-tight">Acceso Denegado</h2>
+        <p className="text-on-surface-variant font-medium max-w-md">No tienes los privilegios requeridos para acceder a la gestión de usuarios. Esta vista es exclusiva para cuentas nivel MASTER.</p>
+      </div>
+    );
+  }
 
   const filtered = useMemo(() => {
     return usuarios.filter((u) => {

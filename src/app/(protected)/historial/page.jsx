@@ -163,63 +163,48 @@ export default function HistorialPage() {
                         </span>
                     </div>
 
-                    <div className="relative">
-                        {/* Linea vertical timeline */}
-                        <div className="absolute left-[27px] top-0 bottom-0 w-0.5 bg-surface-container-high hidden md:block"></div>
-
-                        <div className="space-y-6">
-                            {registros.map((reg) => (
-                                <div key={reg.id} className="relative flex flex-col md:flex-row gap-4 md:items-start group">
-                                    {/* Icono / Punto del timeline */}
-                                    <div className="flex-shrink-0 z-10 hidden md:flex items-center justify-center w-14 h-14 rounded-2xl bg-surface border border-surface-container-high shadow-sm group-hover:border-primary/30 transition-colors">
-                                        <span className={`material-symbols-outlined text-2xl text-on-surface-variant group-hover:text-primary transition-colors`}>{getIcon(reg.entidad)}</span>
+                    <div className="space-y-4 md:space-y-6">
+                        {registros.map((reg) => (
+                            <div key={reg.id} className="bg-surface-container-low rounded-xl px-4 md:px-8 py-5 md:py-6 flex flex-col md:flex-row md:items-center justify-between group hover:bg-surface-container transition-all duration-300 border-l-4 border-surface-container-highest hover:border-primary shadow-sm">
+                                <div className="flex items-start md:items-center gap-4 md:gap-6 w-full md:w-auto overflow-hidden">
+                                    <div className="w-12 h-12 md:w-14 md:h-14 bg-surface-container-highest flex shrink-0 items-center justify-center rounded-xl group-hover:bg-primary/10 transition-colors">
+                                        <span className={`material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors text-2xl md:text-3xl`}>{getIcon(reg.entidad)}</span>
                                     </div>
-
-                                    {/* Card de contenido */}
-                                    <div className="flex-1 bg-surface-container-low border border-surface-container-high rounded-2xl p-5 hover:bg-surface-container transition-colors shadow-sm">
-                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <span className={`${getActionClass(reg.accion)} text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider`}>
-                                                    {reg.accion}
-                                                </span>
-                                                <span className="text-xs font-bold text-on-surface-variant">en</span>
-                                                <span className="text-xs font-black text-on-surface uppercase tracking-widest opacity-70">
-                                                    {reg.entidad}
-                                                </span>
-                                            </div>
-                                            <span className="text-[10px] font-bold text-on-surface-variant/60 flex items-center gap-1">
-                                                <span className="material-symbols-outlined text-sm">schedule</span>
-                                                {fmtDate(reg.creadoEn)}
-                                            </span>
-                                        </div>
-
-                                        <p className="text-sm font-medium text-on-surface leading-relaxed mb-4 whitespace-pre-line">
-                                            {reg.detalle}
-                                        </p>
-
-                                        <div className="flex items-center justify-between pt-3 border-t border-surface-container-high/50">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-6 h-6 rounded-full bg-primary-container flex items-center justify-center text-[10px] font-bold text-primary">
-                                                    {reg.usuario?.nombre?.[0] || "?"}
-                                                </div>
-                                                <span className="text-xs font-bold text-on-surface opacity-80">
-                                                    {reg.usuario?.nombre || "Sistema"}
-                                                </span>
-                                                <span className="text-[10px] font-medium text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">
-                                                    {reg.usuario?.rol || "CORE"}
-                                                </span>
-                                            </div>
-
+                                    <div className="flex-1 overflow-hidden">
+                                        <div className="flex flex-wrap items-center gap-3 mb-1">
+                                            <h3 className="font-headline text-base md:text-lg font-bold text-on-surface tracking-tight truncate">
+                                                {reg.accion} <span className="text-on-surface-variant/70 font-medium text-sm">en</span> {reg.entidad}
+                                            </h3>
                                             {reg.entidadId && (
-                                                <span className="text-[10px] font-mono text-on-surface-variant/40">
+                                                <span className="bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter whitespace-nowrap">
                                                     ID: {reg.entidadId.slice(-8)}
                                                 </span>
                                             )}
                                         </div>
+                                        <p className="text-on-surface-variant text-xs md:text-sm line-clamp-3 md:line-clamp-none whitespace-pre-line leading-relaxed">
+                                            {reg.detalle}
+                                        </p>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
+
+                                <div className="flex items-center justify-between md:justify-end gap-6 md:gap-12 w-full md:w-auto pt-4 md:pt-0 mt-4 md:mt-0 border-t md:border-none border-surface-container-high/50 shrink-0">
+                                    <div className="text-left md:text-right flex-1 md:flex-none">
+                                        <p className="text-[10px] md:text-xs uppercase tracking-widest text-on-surface-variant font-medium mb-1">Responsable</p>
+                                        <div className="flex items-center md:justify-end gap-2">
+                                            <div className="hidden md:flex w-6 h-6 rounded-full bg-surface-bright items-center justify-center border border-outline-variant/30 text-[10px] font-bold text-secondary">
+                                                {reg.usuario?.nombre?.[0] || "?"}
+                                            </div>
+                                            <span className="text-on-surface font-headline font-semibold text-xs md:text-sm">{reg.usuario?.nombre || "Sistema"}</span>
+                                            <span className="material-symbols-outlined text-sm text-secondary-container md:hidden">account_circle</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-right min-w-[100px] md:min-w-[120px]">
+                                        <p className="text-[10px] md:text-xs uppercase tracking-widest text-on-surface-variant font-medium mb-1">Timestamp</p>
+                                        <p className="text-on-surface font-medium text-xs md:text-sm truncate">{fmtDate(reg.creadoEn)}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
                     </div>
 
                     {/* Pagination */}

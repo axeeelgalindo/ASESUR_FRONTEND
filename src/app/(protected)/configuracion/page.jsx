@@ -122,7 +122,7 @@ function Button({ children, onClick, disabled, variant = "primary", className })
 }
 
 export default function ConfiguracionPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null); // id del parametro que se está guardando
   const [error, setError] = useState(null);
@@ -147,8 +147,29 @@ export default function ConfiguracionPage() {
   };
 
   useEffect(() => {
-    fetchParams();
-  }, []);
+    if (status === "authenticated" && session?.user?.rol === "MASTER") {
+      fetchParams();
+    }
+  }, [status, session]);
+
+  if (status === "loading") {
+    return (
+      <div className="flex flex-col items-center justify-center py-40 text-on-surface-variant/30">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary/20 border-t-primary" />
+        <p className="mt-6 text-xs font-black uppercase tracking-[0.2em]">Verificando permisos...</p>
+      </div>
+    );
+  }
+
+  if (session?.user?.rol !== "MASTER") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] px-4 text-center animate-in fade-in zoom-in-95 duration-500">
+        <span className="material-symbols-outlined text-7xl text-error mb-6">lock</span>
+        <h2 className="text-3xl font-black text-on-surface mb-2 uppercase tracking-tight">Acceso Denegado</h2>
+        <p className="text-on-surface-variant font-medium max-w-md">No tienes los privilegios requeridos para acceder a la configuración del sistema. Esta vista es estricta y exclusiva para cuentas nivel MASTER.</p>
+      </div>
+    );
+  }
 
   const handleUpdate = async (id, valor) => {
     setBusy(id);

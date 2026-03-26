@@ -3,24 +3,27 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
 const ThemeContext = createContext({
-    theme: "dark",
+    theme: "light",
     toggleTheme: () => { },
 });
 
 export function ThemeProvider({ children }) {
-    const [theme, setTheme] = useState("dark"); // Default to dark as per current design
+    const [theme, setTheme] = useState("light"); // Default to light
+    const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
         const savedTheme = localStorage.getItem("theme");
         if (savedTheme) {
             setTheme(savedTheme);
-        } else if (window.matchMedia("(prefers-color-scheme: light)").matches) {
-            // If no preference, check system but we default to dark for this app style
-            // setTheme("light"); // Uncomment if you want system preference
+        } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            // If no preference, check system
+            // setTheme("dark"); // Uncomment if you want system preference
         }
+        setMounted(true);
     }, []);
 
     useEffect(() => {
+        if (!mounted) return;
         const root = window.document.documentElement;
         if (theme === "dark") {
             root.classList.add("dark");
@@ -28,7 +31,7 @@ export function ThemeProvider({ children }) {
             root.classList.remove("dark");
         }
         localStorage.setItem("theme", theme);
-    }, [theme]);
+    }, [theme, mounted]);
 
     const toggleTheme = () => {
         setTheme((prev) => (prev === "dark" ? "light" : "dark"));
