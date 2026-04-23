@@ -2,8 +2,9 @@
 
 // src/app/(protected)/pre-siniestro/page.jsx
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { apiGet, apiPost, apiPostForm, apiPatch, fileUrl } from "@/lib/api";
+import api, { apiGet, apiPost, apiPostForm, apiPatch, apiPutForm, fileUrl } from "@/lib/api";
 
 /**
  * Labels UI
@@ -35,6 +36,7 @@ const TipoDocumentoLabel = {
   FOTOS_VIDEOS: "Fotos y/o videos (obligatorio para pasar a siniestro)",
   MANDATO_ASESORIA_NOTARIAL: "Mandato asesoría notarial (obligatorio)",
   CONTRATO_ASESORIA: "Contrato asesoría (obligatorio)",
+  ENVIO_INFORMACION_LIQUIDADOR: "Envío antecedentes liquidador (respaldo)",
   OTRO: "Otro",
 };
 
@@ -59,6 +61,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { Switch } from "@/components/ui/Switch";
 import { Section } from "@/components/ui/Section";
 import { Drawer } from "@/components/ui/Drawer";
 import { Modal } from "@/components/ui/Modal";
@@ -80,10 +83,19 @@ const fmt = (d) => {
 };
 
 export default function PreSiniestroPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const userRole = session?.user?.rol || null;
+  const userId = session?.user?.id || session?.user?.sub || null;
   const isOps = userRole === "OPERACIONES" || userRole === "SUPERADMIN";
   const isAsesor = userRole === "ASESOR";
+  // Puede editar/reemplazar documentos
+  const canEditDocs = (caso) => {
+    if (["OPERACIONES", "SUPERADMIN", "GERENTE", "MASTER"].includes(userRole)) return true;
+    if (userRole === "ASESOR" && caso?.asesorId === userId) return true;
+    return false;
+  };
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -99,10 +111,12 @@ export default function PreSiniestroPage() {
   const [tipoFilter, setTipoFilter] = useState("ALL");
   const [estadoFilter, setEstadoFilter] = useState("ALL");
   const [flagFilter, setFlagFilter] = useState("ALL");
+  const [origenFilter, setOrigenFilter] = useState("ALL");
 
   const [openCreate, setOpenCreate] = useState(false);
-  const [newCaso, setNewCaso] = useState({
+    const [newCaso, setNewCaso] = useState({
     tipo: "HIPOTECARIO_A",
+    esCasoAsesur: true,
     nombreCliente: "",
     rutCliente: "",
     direccion: "",
@@ -119,17 +133,22 @@ export default function PreSiniestroPage() {
     file: null,
   });
 
+  // ✅ reemplazar doc existente
+  const [editDocModal, setEditDocModal] = useState({
+    open: false,
+    doc: null,
+    newFile: null,
+    newTitulo: "",
+    successMsg: null,
+    errorMsg: null,
+  });
+
   const [openReject, setOpenReject] = useState(false);
   const [rejectMotivo, setRejectMotivo] = useState("");
 
   const [datosForm, setDatosForm] = useState({
     companiaSeguro: "",
     numeroSiniestro: "",
-
-    addNombreLiquidador: false,
-    addEmailLiquidador: false,
-    addTelefonoLiquidador: false,
-    addNombreAnalista: false,
 
     nombreLiquidador: "",
     emailLiquidador: "",
@@ -141,6 +160,7 @@ export default function PreSiniestroPage() {
   const [openEmail, setOpenEmail] = useState(false);
   const [emailForm, setEmailForm] = useState({
     destinatarios: "",
+    cc: "",
     asunto: "",
     mensaje: "",
   });
@@ -156,6 +176,11 @@ export default function PreSiniestroPage() {
     direccion: "",
     comuna: "",
     ciudad: "",
+    numeroDocumentoCI: "",
+    firmaNotarial: "",
+    fechaOcurrencia: "",
+    antiguedadEdificio: "",
+    m2ViviendaTotal: "",
   });
 
   const openEdit = () => {
@@ -166,6 +191,11 @@ export default function PreSiniestroPage() {
       direccion: selected.direccion || "",
       comuna: selected.comuna || "",
       ciudad: selected.ciudad || "",
+      numeroDocumentoCI: selected.numeroDocumentoCI || "",
+      firmaNotarial: selected.firmaNotarial || "",
+      fechaOcurrencia: selected.fechaOcurrencia ? selected.fechaOcurrencia.split('T')[0] : "",
+      antiguedadEdificio: selected.antiguedadEdificio || "",
+      m2ViviendaTotal: selected.m2ViviendaTotal || "",
     });
     setOpenEditCaptacion(true);
   };
@@ -195,6 +225,7 @@ export default function PreSiniestroPage() {
       if (tipoFilter !== "ALL") p.append("ramo", tipoFilter);
       if (estadoFilter !== "ALL") p.append("estado", estadoFilter);
       if (flagFilter !== "ALL") p.append("flag", flagFilter);
+      if (origenFilter !== "ALL") p.append("origen", origenFilter);
 
       const res = await apiGet(`/pre-siniestro?${p.toString()}`);
       if (res && res.data) {
@@ -215,11 +246,53 @@ export default function PreSiniestroPage() {
       refresh(query);
     }, 400);
     return () => clearTimeout(handler);
-  }, [query, pagina, limite, tipoFilter, estadoFilter, flagFilter]);
+  }, [query, pagina, limite, tipoFilter, estadoFilter, flagFilter, origenFilter]);
 
   useEffect(() => {
     setPagina(1);
-  }, [tipoFilter, estadoFilter, flagFilter]);
+  }, [tipoFilter, estadoFilter, flagFilter, origenFilter]);
+
+  // Sync from URL
+  useEffect(() => {
+    const flag = searchParams.get("flag");
+    const estado = searchParams.get("estado");
+    const tipo = searchParams.get("tipo") || searchParams.get("ramo");
+    const origen = searchParams.get("origen");
+
+    if (flag) setFlagFilter(flag.toUpperCase());
+    if (estado) setEstadoFilter(estado.toUpperCase());
+    if (tipo) setTipoFilter(tipo.toUpperCase());
+    if (origen) setOrigenFilter(origen.toUpperCase());
+  }, [searchParams]);
+
+  const exportExcel = async () => {
+    try {
+      setBusy(true);
+      setError(null);
+      const p = new URLSearchParams();
+      if (query) p.append("q", query);
+      if (tipoFilter !== "ALL") p.append("ramo", tipoFilter);
+      if (estadoFilter !== "ALL") p.append("estado", estadoFilter);
+      p.append("etapa", "PRE_SINIESTRO_LIST");
+
+      const res = await api.get(`/casos/exportar/excel?${p.toString()}`, {
+        responseType: 'blob'
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Pre_Siniestros_${new Date().toISOString().split('T')[0]}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (e) {
+      console.error(e);
+      setError("Error al exportar Excel");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const filtered = casos;
 
@@ -236,17 +309,13 @@ export default function PreSiniestroPage() {
 
       setSelected(full);
       setSelectedDocs(full.documentos || []);
+      setSelectedFotosWord(full.fotos?.map(f => f.id) || []);
       setOpenDetail(true);
 
       // hidrata form (si el objeto trae esos campos)
       setDatosForm({
         companiaSeguro: full.companiaSeguro || "",
         numeroSiniestro: full.numeroSiniestro || "",
-
-        addNombreLiquidador: Boolean(full.nombreLiquidador),
-        addEmailLiquidador: Boolean(full.emailLiquidador),
-        addTelefonoLiquidador: Boolean(full.telefonoLiquidador),
-        addNombreAnalista: Boolean(full.nombreAnalista),
 
         nombreLiquidador: full.nombreLiquidador || "",
         emailLiquidador: full.emailLiquidador || "",
@@ -333,22 +402,15 @@ export default function PreSiniestroPage() {
 
       // obligatorios para el checklist ops
       if (!payload.companiaSeguro) throw new Error("Compañía es obligatoria");
-      if (!payload.numeroSiniestro)
-        throw new Error("Nº de siniestro es obligatorio");
+      if (!payload.numeroSiniestro) throw new Error("Nº de siniestro es obligatorio");
 
-      // opcionales con checkbox
-      payload.nombreLiquidador = datosForm.addNombreLiquidador
-        ? datosForm.nombreLiquidador.trim() || null
-        : null;
-      payload.emailLiquidador = datosForm.addEmailLiquidador
-        ? datosForm.emailLiquidador.trim() || null
-        : null;
-      payload.telefonoLiquidador = datosForm.addTelefonoLiquidador
-        ? datosForm.telefonoLiquidador.trim() || null
-        : null;
-      payload.nombreAnalista = datosForm.addNombreAnalista
-        ? datosForm.nombreAnalista.trim() || null
-        : null;
+      payload.nombreLiquidador = datosForm.nombreLiquidador.trim() || null;
+      payload.emailLiquidador = datosForm.emailLiquidador.trim() || null;
+      payload.telefonoLiquidador = datosForm.telefonoLiquidador.trim() || null;
+      payload.nombreAnalista = datosForm.nombreAnalista.trim() || null;
+
+      if (!payload.nombreLiquidador) throw new Error("Nombre del liquidador es obligatorio");
+      if (!payload.emailLiquidador) throw new Error("Email del liquidador es obligatorio");
 
       await apiPatch(`/pre-siniestro/${selected.id}/datos`, payload);
 
@@ -365,10 +427,6 @@ export default function PreSiniestroPage() {
         emailLiquidador: full.emailLiquidador || "",
         telefonoLiquidador: full.telefonoLiquidador || "",
         nombreAnalista: full.nombreAnalista || "",
-        addNombreLiquidador: Boolean(full.nombreLiquidador),
-        addEmailLiquidador: Boolean(full.emailLiquidador),
-        addTelefonoLiquidador: Boolean(full.telefonoLiquidador),
-        addNombreAnalista: Boolean(full.nombreAnalista),
       }));
 
       await refresh();
@@ -407,6 +465,30 @@ export default function PreSiniestroPage() {
       setError(
         e?.response?.data?.error || e?.message || "Error subiendo documento"
       );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reemplazarDocPre = async () => {
+    if (!selected?.id || !editDocModal.doc || !editDocModal.newFile) return;
+    setEditDocModal((p) => ({ ...p, errorMsg: null, successMsg: null }));
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", editDocModal.newFile);
+      if (editDocModal.newTitulo.trim()) fd.append("titulo", editDocModal.newTitulo.trim());
+
+      await apiPutForm(`/pre-siniestro/${selected.id}/documentos/${editDocModal.doc.id}`, fd);
+
+      const full = await apiGet(`/pre-siniestro/${selected.id}`);
+      setSelected(full);
+      setSelectedDocs(full.documentos || []);
+      // Mostrar éxito brevemente antes de cerrar
+      setEditDocModal((p) => ({ ...p, successMsg: "✅ Documento reemplazado correctamente.", newFile: null }));
+      setTimeout(() => setEditDocModal({ open: false, doc: null, newFile: null, newTitulo: "", successMsg: null, errorMsg: null }), 1500);
+    } catch (e) {
+      setEditDocModal((p) => ({ ...p, errorMsg: e?.response?.data?.error || e?.message || "Error reemplazando documento" }));
     } finally {
       setBusy(false);
     }
@@ -490,8 +572,6 @@ export default function PreSiniestroPage() {
   };
 
   const openGenerarWord = () => {
-    // por defecto selecciona todas las fotos para ahorrar tiempo
-    setSelectedFotosWord(selected?.fotos?.map((f) => f.id) || []);
     setOpenWordModal(true);
   };
 
@@ -530,20 +610,22 @@ export default function PreSiniestroPage() {
   const sendEmailManual = async () => {
     if (!selected?.id) return;
     const dests = emailForm.destinatarios.split(",").map(d => d.trim()).filter(Boolean);
+    const ccs = emailForm.cc?.split(",").map(c => c.trim()).filter(Boolean) || [];
     if (!dests.length || !emailForm.asunto || !emailForm.mensaje) {
-      setError("Todos los campos del correo son obligatorios.");
+      setError("Faltan campos obligatorios para el correo.");
       return;
     }
     try {
       setBusy(true);
       await apiPost(`/casos/${selected.id}/enviar-correo`, {
         destinatarios: dests,
+        cc: ccs,
         asunto: emailForm.asunto,
         mensaje: emailForm.mensaje
       });
       setOpenEmail(false);
-      setEmailForm({ destinatarios: "", asunto: "", mensaje: "" });
-      alert("Correo enviado exitosamente con Reply-To");
+      setEmailForm({ destinatarios: "", cc: "", asunto: "", mensaje: "" });
+      alert("Correo enviado exitosamente.");
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || "Error enviando correo");
     } finally {
@@ -553,13 +635,19 @@ export default function PreSiniestroPage() {
 
   const computeChecklist = (caso, docs = []) => {
     const docTypes = new Set((docs || []).map((d) => d.tipo));
+    const qtyFotos = caso?.fotos?.length || 0;
 
-    const mk = (key, group) => ({
-      key,
-      label: TipoDocumentoLabel[key] || key,
-      ok: docTypes.has(key),
-      group,
-    });
+    const mk = (key, group) => {
+      let isOk = docTypes.has(key);
+      if (key === "FOTOS_VIDEOS" && qtyFotos >= 1) isOk = true;
+
+      return {
+        key,
+        label: TipoDocumentoLabel[key] || key,
+        ok: isOk,
+        group,
+      };
+    };
 
     // 1) ASESOR: requisitos para pedir autorización a OPS
     const isTipoB = caso?.tipo === "POLIZA_PARTICULAR_B";
@@ -670,6 +758,14 @@ export default function PreSiniestroPage() {
               Actualizar
             </button>
             <button
+              onClick={exportExcel}
+              disabled={loading || busy}
+              className="flex h-11 items-center gap-2 rounded-xl border border-outline-variant bg-surface px-4 text-sm font-bold text-on-surface transition hover:bg-surface-container-high disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-xl">download</span>
+              Exportar Excel
+            </button>
+            <button
               onClick={() => setOpenCreate(true)}
               disabled={busy}
               className="flex h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-on-primary transition hover:bg-primary/90 shadow-lg shadow-primary/20"
@@ -730,7 +826,6 @@ export default function PreSiniestroPage() {
                 <option value="AUTORIZADO">Autorizado</option>
                 <option value="RECHAZADO">Rechazado</option>
               </select>
-
               <select
                 value={flagFilter}
                 onChange={(e) => setFlagFilter(e.target.value)}
@@ -741,6 +836,16 @@ export default function PreSiniestroPage() {
                 <option value="PEND_AUT">Pendiente Ops</option>
                 <option value="AUTORIZADO">Autorizado</option>
                 <option value="RECHAZADO">Rechazado</option>
+              </select>
+
+              <select
+                value={origenFilter}
+                onChange={(e) => setOrigenFilter(e.target.value)}
+                className="h-12 rounded-2xl border-none bg-surface-container px-4 pr-10 text-sm font-bold text-on-surface focus:ring-2 focus:ring-primary/50"
+              >
+                <option value="ALL">Todos los Orígenes</option>
+                <option value="ASESUR">Asesur</option>
+                <option value="PROPIO">Propio</option>
               </select>
 
               <div className="flex h-12 items-center gap-1 rounded-2xl bg-surface-container p-1">
@@ -798,7 +903,10 @@ export default function PreSiniestroPage() {
                 <button
                   key={c.id}
                   onClick={() => openCaso(c)}
-                  className="group relative flex w-full flex-col overflow-hidden rounded-[2.5rem] border border-outline-variant/80 bg-surface shadow-sm transition-all duration-500 hover:-translate-y-1 hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/10 outline-none p-0 hover:cursor-pointer"
+                  className={cls(
+                    "group relative flex w-full flex-col overflow-hidden rounded-[2.5rem] border border-outline-variant/80 bg-surface shadow-sm transition-all duration-500 hover:-translate-y-1 hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/10 outline-none p-0 hover:cursor-pointer",
+                    c.esCasoAsesur ? "border-l-4 border-l-primary bg-primary/[0.02]" : "border-l-4 border-l-amber-500 bg-amber-500/[0.02]"
+                  )}
                 >
                   {/* Card Header */}
                   <div className="p-6 pb-4">
@@ -901,7 +1009,10 @@ export default function PreSiniestroPage() {
                       <tr
                         key={c.id}
                         onClick={() => openCaso(c)}
-                        className="group cursor-pointer transition hover:bg-surface-container-low"
+                        className={cls(
+                          "group cursor-pointer transition hover:bg-surface-container-low",
+                          c.esCasoAsesur ? "border-l-4 border-l-primary bg-primary/[0.01]" : "border-l-4 border-l-amber-500 bg-amber-500/[0.01]"
+                        )}
                       >
                         <td className="px-6 py-4">
                           <div className="text-sm font-black text-on-surface">SIN-{String(c.folio).padStart(6, "0")}</div>
@@ -969,15 +1080,14 @@ export default function PreSiniestroPage() {
         }
       >
         <div className="grid gap-6 md:grid-cols-2">
-          <Select
-            label="Tipo de caso"
-            value={newCaso.tipo}
-            onChange={(v) => setNewCaso((p) => ({ ...p, tipo: v }))}
-            options={[
-              { value: "HIPOTECARIO_A", label: "Hipotecario (A)" },
-              { value: "POLIZA_PARTICULAR_B", label: "Póliza Particular (B)" },
-            ]}
-          />
+          <div className="md:col-span-2">
+            <Switch
+              label="Caso ASESUR"
+              description="Habilitar si el caso fue entregado por la empresa. Deshabilitar si es captación propia."
+              checked={newCaso.esCasoAsesur}
+              onChange={(v) => setNewCaso((p) => ({ ...p, esCasoAsesur: v }))}
+            />
+          </div>
           <Input
             label="RUT Cliente"
             value={newCaso.rutCliente}
@@ -1081,6 +1191,12 @@ export default function PreSiniestroPage() {
             placeholder="correo1@seguro.com, correo2@peritajes.cl"
           />
           <Input
+            label="Con Copia (CC - opcional)"
+            value={emailForm.cc}
+            onChange={(v) => setEmailForm((p) => ({ ...p, cc: v }))}
+            placeholder="jefe@seguro.com"
+          />
+          <Input
             label="Asunto"
             value={emailForm.asunto}
             onChange={(v) => setEmailForm((p) => ({ ...p, asunto: v }))}
@@ -1154,6 +1270,81 @@ export default function PreSiniestroPage() {
               </div>
             )}
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={openEditCaptacion}
+        title="Editar Datos del Caso"
+        onClose={() => setOpenEditCaptacion(false)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setOpenEditCaptacion(false)} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button onClick={saveEdit} disabled={busy}>
+              Guardar Cambios
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-6 md:grid-cols-2">
+          <Input
+            label="Nombre Cliente"
+            value={editForm.nombreCliente}
+            onChange={(v) => setEditForm((p) => ({ ...p, nombreCliente: v }))}
+          />
+          <Input
+            label="RUT Cliente"
+            value={editForm.rutCliente}
+            onChange={(v) => setEditForm((p) => ({ ...p, rutCliente: v }))}
+          />
+          <div className="md:col-span-2">
+            <Input
+              label="Dirección"
+              value={editForm.direccion}
+              onChange={(v) => setEditForm((p) => ({ ...p, direccion: v }))}
+            />
+          </div>
+          <Input
+            label="Comuna"
+            value={editForm.comuna}
+            onChange={(v) => setEditForm((p) => ({ ...p, comuna: v }))}
+          />
+          <Input
+            label="Ciudad"
+            value={editForm.ciudad}
+            onChange={(v) => setEditForm((p) => ({ ...p, ciudad: v }))}
+          />
+          <Input
+            label="N° Documento C.I."
+            value={editForm.numeroDocumentoCI}
+            onChange={(v) => setEditForm((p) => ({ ...p, numeroDocumentoCI: v }))}
+          />
+          <Input
+            label="Firma Notarial"
+            value={editForm.firmaNotarial}
+            onChange={(v) => setEditForm((p) => ({ ...p, firmaNotarial: v }))}
+          />
+          <Input
+            label="Fecha Ocurrencia"
+            type="date"
+            value={editForm.fechaOcurrencia}
+            onChange={(v) => setEditForm((p) => ({ ...p, fechaOcurrencia: v }))}
+          />
+          <Input
+            label="Antigüedad Edificio (años)"
+            type="number"
+            value={editForm.antiguedadEdificio}
+            onChange={(v) => setEditForm((p) => ({ ...p, antiguedadEdificio: v }))}
+          />
+          <Input
+            label="MTS2 Vivienda"
+            type="number"
+            step="0.1"
+            value={editForm.m2ViviendaTotal}
+            onChange={(v) => setEditForm((p) => ({ ...p, m2ViviendaTotal: v }))}
+          />
         </div>
       </Modal>
 
@@ -1233,7 +1424,58 @@ export default function PreSiniestroPage() {
                       </div>
                     </div>
                   </div>
+
+                  <div className="group rounded-[1.5rem] border border-outline-variant/20 bg-surface-container-low p-5 transition hover:bg-surface-container-high">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant/50">Origen del Caso</span>
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${selected.esCasoAsesur ? "bg-primary/10 text-primary" : "bg-amber-500/10 text-amber-600"}`}>
+                        <span className="material-symbols-outlined text-xl">{selected.esCasoAsesur ? "business" : "person"}</span>
+                      </div>
+                      <div>
+                        <div className="text-sm font-black font-black uppercase tracking-widest">{selected.esCasoAsesur ? "Asesur" : "Propio"}</div>
+                        <div className="text-[10px] font-bold text-on-surface-variant/60">
+                          {selected.esCasoAsesur ? "Entregado por empresa" : "Traído por asesor"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
+
+                {(selected.numeroDocumentoCI || selected.firmaNotarial || selected.fechaOcurrencia || selected.antiguedadEdificio || selected.m2ViviendaTotal) && (
+                  <div className="grid gap-4 sm:grid-cols-2 rounded-2xl border border-outline-variant/10 bg-surface-container-low p-5">
+                    <div className="col-span-full text-[10px] font-black uppercase tracking-wider text-on-surface-variant/50 mb-1">Datos Adicionales de Vivienda</div>
+                    {selected.numeroDocumentoCI && (
+                      <div>
+                        <div className="text-[10px] font-bold text-on-surface-variant/60 uppercase">N° Documento C.I.</div>
+                        <div className="text-sm font-black">{selected.numeroDocumentoCI}</div>
+                      </div>
+                    )}
+                    {selected.firmaNotarial && (
+                      <div>
+                        <div className="text-[10px] font-bold text-on-surface-variant/60 uppercase">Firma Notarial</div>
+                        <div className="text-sm font-black">{selected.firmaNotarial}</div>
+                      </div>
+                    )}
+                    {selected.fechaOcurrencia && (
+                      <div>
+                        <div className="text-[10px] font-bold text-on-surface-variant/60 uppercase">Fecha Ocurrencia</div>
+                        <div className="text-sm font-black">{new Date(selected.fechaOcurrencia).toLocaleDateString("es-CL")}</div>
+                      </div>
+                    )}
+                    {selected.antiguedadEdificio && (
+                      <div>
+                        <div className="text-[10px] font-bold text-on-surface-variant/60 uppercase">Antigüedad Edificio</div>
+                        <div className="text-sm font-black">{selected.antiguedadEdificio} años</div>
+                      </div>
+                    )}
+                    {selected.m2ViviendaTotal && (
+                      <div>
+                        <div className="text-[10px] font-bold text-on-surface-variant/60 uppercase">MTS2 Vivienda</div>
+                        <div className="text-sm font-black">{selected.m2ViviendaTotal} m²</div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {selected.vbPreFecha && (
                   <div className="flex items-center gap-4 rounded-2xl border border-tertiary/20 bg-tertiary-container/5 p-4">
@@ -1327,54 +1569,46 @@ export default function PreSiniestroPage() {
               <div className="grid gap-6">
                 <div className="grid gap-4 md:grid-cols-2">
                   <Input
-                    label="Compañía de Seguros"
+                    label="Compañía de Seguros *"
                     value={datosForm.companiaSeguro}
                     onChange={(v) => setDatosForm((p) => ({ ...p, companiaSeguro: v }))}
                     placeholder="Ej: HDI, BCI, Zurich..."
-                    disabled={isAsesor}
                   />
                   <Input
-                    label="Nº de Siniestro"
+                    label="Nº de Siniestro *"
                     value={datosForm.numeroSiniestro}
                     onChange={(v) => setDatosForm((p) => ({ ...p, numeroSiniestro: v }))}
                     placeholder="Ej: 987654321"
-                    disabled={isAsesor}
                   />
                 </div>
 
                 <div className="rounded-3xl border border-outline-variant/20 bg-surface-container-low p-6">
                   <h6 className="mb-4 text-xs font-black uppercase tracking-widest text-on-surface-variant/50">Datos del Liquidador</h6>
                   <div className="grid gap-6 md:grid-cols-2">
-                    <div className="space-y-3">
-                      <Checkbox
-                        label="Nombre Liquidador"
-                        checked={datosForm.addNombreLiquidador}
-                        disabled={isAsesor}
-                        onChange={(v) => setDatosForm((p) => ({ ...p, addNombreLiquidador: v, nombreLiquidador: v ? p.nombreLiquidador : "" }))}
-                      />
-                      {datosForm.addNombreLiquidador && (
-                        <Input
-                          value={datosForm.nombreLiquidador}
-                          onChange={(v) => setDatosForm((p) => ({ ...p, nombreLiquidador: v }))}
-                          placeholder="Nombre del perito..."
-                        />
-                      )}
-                    </div>
-                    <div className="space-y-3">
-                      <Checkbox
-                        label="Email Liquidador"
-                        checked={datosForm.addEmailLiquidador}
-                        disabled={isAsesor}
-                        onChange={(v) => setDatosForm((p) => ({ ...p, addEmailLiquidador: v, emailLiquidador: v ? p.emailLiquidador : "" }))}
-                      />
-                      {datosForm.addEmailLiquidador && (
-                        <Input
-                          value={datosForm.emailLiquidador}
-                          onChange={(v) => setDatosForm((p) => ({ ...p, emailLiquidador: v }))}
-                          placeholder="ejemplo@liquidador.cl"
-                        />
-                      )}
-                    </div>
+                    <Input
+                      label="Nombre Liquidador *"
+                      value={datosForm.nombreLiquidador}
+                      onChange={(v) => setDatosForm((p) => ({ ...p, nombreLiquidador: v }))}
+                      placeholder="Nombre del liquidador asignado"
+                    />
+                    <Input
+                      label="Email Liquidador *"
+                      value={datosForm.emailLiquidador}
+                      onChange={(v) => setDatosForm((p) => ({ ...p, emailLiquidador: v }))}
+                      placeholder="ejemplo@liquidador.cl"
+                    />
+                    <Input
+                      label="Teléfono Liquidador (Opcional)"
+                      value={datosForm.telefonoLiquidador}
+                      onChange={(v) => setDatosForm((p) => ({ ...p, telefonoLiquidador: v }))}
+                      placeholder="+56 9 1234 5678"
+                    />
+                    <Input
+                      label="Analista a cargo (Opcional)"
+                      value={datosForm.nombreAnalista}
+                      onChange={(v) => setDatosForm((p) => ({ ...p, nombreAnalista: v }))}
+                      placeholder="Nombre del analista de la compañía"
+                    />
                   </div>
 
                   <div className="mt-8 flex justify-end gap-3">
@@ -1433,7 +1667,14 @@ export default function PreSiniestroPage() {
                     value={docForm.tipo}
                     onChange={(v) => setDocForm((p) => ({ ...p, tipo: v }))}
                     options={Object.keys(TipoDocumentoLabel)
-                      .filter((k) => (isAsesor ? !OPS_REQ_PASO_SINIESTRO_DOCS.includes(k) : true))
+                      .filter((k) => {
+                        if (isAsesor) {
+                          // El asesor NO sube inspección ni fotos (eso viene de app), 
+                          // pero SI debe poder subir mandato y contrato
+                          if (k === "INSPECCION_ASESUR" || k === "FOTOS_VIDEOS") return false;
+                        }
+                        return true;
+                      })
                       .map((k) => ({ value: k, label: TipoDocumentoLabel[k] }))}
                   />
                   <Input
@@ -1477,7 +1718,7 @@ export default function PreSiniestroPage() {
                     <p className="text-sm font-bold">Sin registros</p>
                   </div>
                 ) : (
-                  selectedDocs.map((d) => (
+                selectedDocs.map((d) => (
                     <div key={d.id} className="group flex items-center justify-between rounded-2xl border border-outline-variant/10 bg-surface-container-low p-4 transition hover:bg-surface-container-high">
                       <div className="flex items-center gap-4">
                         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-surface-container-highest text-primary">
@@ -1492,14 +1733,25 @@ export default function PreSiniestroPage() {
                           <div className="text-[11px] font-bold text-on-surface-variant/60">{d.titulo || "Sin descripción"}</div>
                         </div>
                       </div>
-                      <a
-                        href={fileUrl(d.urlArchivo)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex h-10 w-10 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-primary/10 hover:text-primary"
-                      >
-                        <span className="material-symbols-outlined">visibility</span>
-                      </a>
+                      <div className="flex items-center gap-2">
+                        {canEditDocs(selected) && (
+                          <button
+                            onClick={() => setEditDocModal({ open: true, doc: d, newFile: null, newTitulo: d.titulo || "" })}
+                            title="Reemplazar documento"
+                            className="flex h-9 w-9 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-amber-500/10 hover:text-amber-600"
+                          >
+                            <span className="material-symbols-outlined text-xl">swap_horiz</span>
+                          </button>
+                        )}
+                        <a
+                          href={fileUrl(d.urlArchivo)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex h-9 w-9 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-primary/10 hover:text-primary"
+                        >
+                          <span className="material-symbols-outlined">visibility</span>
+                        </a>
+                      </div>
                     </div>
                   ))
                 )}
@@ -1508,6 +1760,116 @@ export default function PreSiniestroPage() {
           </div>
         )}
       </Drawer>
+
+      {/* MODAL: Reemplazar Documento */}
+      <Modal
+        open={editDocModal.open}
+        title="Reemplazar Documento"
+        onClose={() => setEditDocModal({ open: false, doc: null, newFile: null, newTitulo: "", successMsg: null, errorMsg: null })}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditDocModal({ open: false, doc: null, newFile: null, newTitulo: "", successMsg: null, errorMsg: null })} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button onClick={reemplazarDocPre} disabled={busy || !editDocModal.newFile}>
+              <span className="material-symbols-outlined text-sm">swap_horiz</span>
+              {busy ? "Subiendo..." : "Confirmar Reemplazo"}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-5">
+          {/* Documento actual */}
+          <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low p-4">
+            <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/50">Documento Actual</span>
+            <div className="mt-2 flex items-center gap-3">
+              <span className="material-symbols-outlined text-2xl text-primary/60">description</span>
+              <div>
+                <div className="text-sm font-black text-on-surface">
+                  {TipoDocumentoLabel[editDocModal.doc?.tipo] || editDocModal.doc?.tipo}
+                </div>
+                <div className="text-[11px] font-bold text-on-surface-variant/60">
+                  {editDocModal.doc?.titulo || "Sin nombre"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 text-on-surface-variant/40">
+            <div className="flex-1 border-t border-outline-variant/20"></div>
+            <span className="material-symbols-outlined text-lg">arrow_downward</span>
+            <div className="flex-1 border-t border-outline-variant/20"></div>
+          </div>
+
+          {/* Nuevo título (opcional) */}
+          <Input
+            label="Nuevo Título Descriptivo (opcional)"
+            value={editDocModal.newTitulo}
+            onChange={(v) => setEditDocModal((p) => ({ ...p, newTitulo: v }))}
+            placeholder="Ej: Inspección v2, Mandato corregido..."
+          />
+
+          {/* Selector de nuevo archivo */}
+          <div className="flex flex-col gap-2">
+            <span className="ml-1 text-[11px] font-black uppercase tracking-wider text-on-surface-variant/70">
+              Nuevo Archivo <span className="text-error">*</span>
+            </span>
+            <label className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-8 transition cursor-pointer
+              ${editDocModal.newFile
+                ? "border-amber-500/60 bg-amber-500/5"
+                : "border-outline-variant/30 bg-surface-container-lowest hover:border-amber-500/40 hover:bg-amber-500/5"
+              }`}>
+              <input
+                type="file"
+                accept="application/pdf,image/*"
+                className="hidden"
+                onChange={(e) => {
+                  // Capturar referencia al archivo INMEDIATAMENTE, fuera del setState callback
+                  const file = e.target.files?.[0] ?? null;
+                  setEditDocModal((p) => ({ ...p, newFile: file, errorMsg: null }));
+                  // Limpiar el input para permitir re-seleccionar el mismo archivo
+                  e.target.value = "";
+                }}
+              />
+              <span className={`material-symbols-outlined text-4xl mb-2 ${editDocModal.newFile ? "text-amber-500" : "text-amber-500/40"}`}>
+                upload_file
+              </span>
+              <p className={`text-sm font-bold text-center break-all px-2 ${editDocModal.newFile ? "text-on-surface" : "text-on-surface-variant/60"}`}>
+                {editDocModal.newFile ? editDocModal.newFile.name : "Haz clic para seleccionar el nuevo archivo"}
+              </p>
+              {editDocModal.newFile && (
+                <p className="text-[10px] font-bold text-amber-600 mt-1">
+                  {(editDocModal.newFile.size / 1024).toFixed(1)} KB — listo para subir
+                </p>
+              )}
+              {!editDocModal.newFile && (
+                <p className="text-xs font-medium text-on-surface-variant/40 mt-1">PDF o Imagen (Máx 20MB)</p>
+              )}
+            </label>
+          </div>
+
+          {/* Feedback de error */}
+          {editDocModal.errorMsg && (
+            <div className="rounded-xl border border-error/30 bg-error/5 p-3 text-[12px] font-bold text-error flex items-center gap-2">
+              <span className="material-symbols-outlined text-lg">error</span>
+              {editDocModal.errorMsg}
+            </div>
+          )}
+
+          {/* Feedback de éxito */}
+          {editDocModal.successMsg && (
+            <div className="rounded-xl border border-tertiary/30 bg-tertiary/5 p-3 text-[12px] font-bold text-tertiary flex items-center gap-2">
+              <span className="material-symbols-outlined text-lg">check_circle</span>
+              {editDocModal.successMsg}
+            </div>
+          )}
+
+          {/* Aviso auditoría */}
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-[11px] font-bold text-amber-700">
+            ⚠️ El archivo anterior será eliminado y reemplazado. Quedará registro del cambio en la bitácora del caso.
+          </div>
+        </div>
+      </Modal>
     </div >
   );
 }

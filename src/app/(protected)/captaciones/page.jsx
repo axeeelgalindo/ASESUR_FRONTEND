@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiGet, apiPatch, fileUrl } from "@/lib/api";
 import { useSession } from "next-auth/react";
 
@@ -32,6 +33,8 @@ const EstadoOptions = [
 ];
 
 export default function CaptacionesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -49,6 +52,7 @@ export default function CaptacionesPage() {
   const [filterEstado, setFilterEstado] = useState("");
   const [filterRamo, setFilterRamo] = useState("");
   const [filterFecha, setFilterFecha] = useState(""); // "" or "hoy" or "semana"
+  const [filterOrigen, setFilterOrigen] = useState("");
 
 
   const [openDetail, setOpenDetail] = useState(false);
@@ -73,6 +77,7 @@ export default function CaptacionesPage() {
       if (filterEstado) p.append("estado", filterEstado);
       if (filterRamo) p.append("ramo", filterRamo);
       if (filterFecha) p.append("fecha", filterFecha);
+      if (filterOrigen) p.append("origen", filterOrigen);
 
       const res = await apiGet(`/captaciones?${p.toString()}`);
       if (res && res.data) {
@@ -86,7 +91,7 @@ export default function CaptacionesPage() {
     } finally {
       setLoading(false);
     }
-  }, [pagina, limite, filterEstado, filterRamo, filterFecha]);
+  }, [pagina, limite, filterEstado, filterRamo, filterFecha, filterOrigen]);
 
   // Debounced Search Effect
   useEffect(() => {
@@ -98,7 +103,18 @@ export default function CaptacionesPage() {
 
   useEffect(() => {
     setPagina(1); // Reset page on filter change
-  }, [filterEstado, filterRamo, filterFecha]);
+  }, [filterEstado, filterRamo, filterFecha, filterOrigen]);
+
+  // Sync from URL
+  useEffect(() => {
+    const estado = searchParams.get("estado");
+    const ramo = searchParams.get("ramo") || searchParams.get("tipo");
+    const origen = searchParams.get("origen");
+
+    if (estado) setFilterEstado(estado.toUpperCase());
+    if (ramo) setFilterRamo(ramo.toUpperCase());
+    if (origen) setFilterOrigen(origen.toUpperCase());
+  }, [searchParams]);
 
   const filtered = casos;
 
@@ -195,6 +211,16 @@ export default function CaptacionesPage() {
               <option value="hoy">Hoy</option>
               <option value="semana">Últimos 7 días</option>
             </select>
+
+            <select
+              value={filterOrigen}
+              onChange={(e) => setFilterOrigen(e.target.value)}
+              className="bg-surface-container-high text-on-surface text-sm font-semibold px-4 py-2.5 rounded-xl border-none outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+            >
+              <option value="">Todos los Orígenes</option>
+              <option value="ASESUR">Asesur</option>
+              <option value="PROPIO">Propio</option>
+            </select>
           </div>
 
           {/* Toggle View */}
@@ -249,7 +275,10 @@ export default function CaptacionesPage() {
               <div
                 key={c.id}
                 onClick={() => openCaso(c)}
-                className="group relative bg-surface-container-low rounded-xl overflow-hidden cursor-pointer transition-all duration-300 hover:translate-y-[-4px] hover:shadow-2xl hover:shadow-black/20 border border-outline-variant/10"
+                className={cls(
+                  "group relative bg-surface-container-low rounded-xl overflow-hidden cursor-pointer transition-all duration-300 hover:translate-y-[-4px] hover:shadow-2xl hover:shadow-black/20 border border-outline-variant/10",
+                  c.esCasoAsesur ? "border-l-4 border-l-primary bg-primary/[0.02]" : "border-l-4 border-l-amber-500 bg-amber-500/[0.02]"
+                )}
               >
                 <div className={cls("h-1.5 w-full", isAsignado ? "bg-primary" : "bg-secondary")}></div>
                 <div className="p-6">
@@ -315,7 +344,10 @@ export default function CaptacionesPage() {
                   <tr
                     key={c.id}
                     onClick={() => openCaso(c)}
-                    className="hover:bg-surface-container/50 transition-colors cursor-pointer group"
+                    className={cls(
+                      "hover:bg-surface-container/50 transition-colors cursor-pointer group",
+                      c.esCasoAsesur ? "border-l-4 border-l-primary bg-primary/[0.01]" : "border-l-4 border-l-amber-500 bg-amber-500/[0.01]"
+                    )}
                   >
                     <td className="px-8 py-5 font-bold text-on-surface">
                       SIN-{String(c.folio).padStart(6, "0")}

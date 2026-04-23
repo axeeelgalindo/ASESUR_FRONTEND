@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
+import { formatRut, validateRut } from "@/lib/rut";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("cribortech@asesur.com");
@@ -9,6 +10,7 @@ export default function LoginPage() {
   const [rutBusquilla, setRutBusquilla] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [rutError, setRutError] = useState("");
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -32,8 +34,20 @@ export default function LoginPage() {
 
   const onBuscarCaso = (e) => {
     e.preventDefault();
+    setRutError("");
     if (!rutBusquilla) return;
-    window.location.href = `/mi-caso/${rutBusquilla}`;
+    if (!validateRut(rutBusquilla)) {
+      setRutError("RUT inválido. Verifique y reintente.");
+      return;
+    }
+    // Enviamos el RUT limpio (solo números y K) para mayor compatibilidad
+    const limpio = rutBusquilla.replace(/[^0-9kK]/g, '').toUpperCase();
+    window.location.href = `/mi-caso/${limpio}`;
+  };
+
+  const handleRutChange = (e) => {
+    const val = e.target.value;
+    setRutBusquilla(formatRut(val));
   };
 
   return (
@@ -84,7 +98,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-secondary-container text-on-secondary font-headline font-bold py-4 rounded-lg hover:brightness-110 active:scale-[0.98] transition-all text-lg shadow-lg shadow-secondary-container/10 disabled:opacity-50"
+              className="w-full bg-secondary-container text-on-surface font-headline font-bold py-4 rounded-lg hover:brightness-110 border border-outline-variant/30 hover:border-outline-variant/50 active:scale-[0.98] transition-all text-lg shadow-lg shadow-secondary-container/30 disabled:opacity-100 hover:cursor-pointer"
             >
               {loading ? "Ingresando..." : "Ingresar"}
             </button>
@@ -118,13 +132,18 @@ export default function LoginPage() {
                     <input
                       type="text"
                       value={rutBusquilla}
-                      onChange={(e) => setRutBusquilla(e.target.value)}
-                      className="w-full bg-surface-container-low/80 border border-outline-variant/30 focus:border-secondary focus:ring-0 rounded-lg py-4 pl-12 pr-4 text-on-surface placeholder:text-outline/60 transition-all font-mono outline-none"
+                      onChange={handleRutChange}
+                      className={`w-full bg-surface-container-low/80 border ${rutError || (rutBusquilla && !validateRut(rutBusquilla)) ? 'border-error/50 ring-1 ring-error/20' : 'border-outline-variant/30'} focus:border-secondary focus:ring-0 rounded-lg py-4 pl-12 pr-4 text-on-surface placeholder:text-outline/60 transition-all font-mono outline-none`}
                       placeholder="12.345.678-9"
                     />
                   </div>
+                  {rutError && (
+                    <p className="text-[10px] text-error font-bold uppercase tracking-widest pl-1 mt-1">
+                      {rutError}
+                    </p>
+                  )}
                 </div>
-                <button type="submit" className="w-full border border-secondary text-secondary hover:bg-secondary/10 font-headline font-bold py-4 rounded-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                <button type="submit" className="w-full border border-secondary text-secondary hover:bg-secondary/10 font-headline font-bold py-4 rounded-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 hover:cursor-pointer">
                   Consultar Estado
                   <span className="material-symbols-outlined">arrow_forward</span>
                 </button>

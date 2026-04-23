@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { Chart, registerables } from "chart.js";
 import ChartDataLabels from "chartjs-plugin-datalabels";
@@ -21,6 +22,7 @@ function titleCase(s) {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { data: session, status } = useSession();
   const { theme } = useTheme();
 
@@ -29,6 +31,9 @@ export default function DashboardPage() {
 
   const [resumen, setResumen] = useState(null);
   const [pendientes, setPendientes] = useState([]);
+  const [locaciones, setLocaciones] = useState([]);
+  const [selectedRegion, setSelectedRegion] = useState("");
+  const [selectedComuna, setSelectedComuna] = useState("");
 
   const barChartRef = useRef(null);
   const donutChartRef = useRef(null);
@@ -42,11 +47,16 @@ export default function DashboardPage() {
     setErr("");
 
     try {
-      const r1 = await api.get("/resumen", {
+      const p = new URLSearchParams();
+      if (selectedRegion) p.append("ciudad", selectedRegion);
+      if (selectedComuna) p.append("comuna", selectedComuna);
+      const query = p.toString() ? `?${p.toString()}` : "";
+
+      const r1 = await api.get(`/resumen${query}`, {
         headers: { Authorization: `Bearer ${session.backendToken}` },
       });
 
-      const r2 = await api.get("/pendientes-autorizacion", {
+      const r2 = await api.get(`/pendientes-autorizacion${query}`, {
         headers: { Authorization: `Bearer ${session.backendToken}` },
       });
 
@@ -61,7 +71,32 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
+  }, [session?.backendToken, status, selectedRegion, selectedComuna]);
+
+  const navigateTo = (path, params = {}) => {
+    const p = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val) p.append(key, val);
+    });
+    const query = p.toString() ? `?${p.toString()}` : "";
+    router.push(`${path}${query}`);
+  };
+
+  const fetchLocaciones = useCallback(async () => {
+    if (status !== "authenticated") return;
+    try {
+      const res = await api.get("/locaciones", {
+        headers: { Authorization: `Bearer ${session.backendToken}` },
+      });
+      setLocaciones(res.data);
+    } catch (e) {
+      console.error("Error cargando locaciones", e);
+    }
   }, [session?.backendToken, status]);
+
+  useEffect(() => {
+    fetchLocaciones();
+  }, [fetchLocaciones]);
 
   useEffect(() => {
     fetchAll();
@@ -264,6 +299,39 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedRegion}
+                onChange={(e) => {
+                  setSelectedRegion(e.target.value);
+                  setSelectedComuna("");
+                }}
+                className="bg-surface-container-low text-on-surface text-xs font-bold px-4 py-2 rounded-full border border-outline-variant/20 outline-none focus:ring-1 focus:ring-primary min-w-[140px]"
+              >
+                <option value="">Todas las Regiones</option>
+                {locaciones.map((l) => (
+                  <option key={l.region} value={l.region}>
+                    {l.region}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedComuna}
+                onChange={(e) => setSelectedComuna(e.target.value)}
+                disabled={!selectedRegion}
+                className="bg-surface-container-low text-on-surface text-xs font-bold px-4 py-2 rounded-full border border-outline-variant/20 outline-none focus:ring-1 focus:ring-primary min-w-[140px] disabled:opacity-50"
+              >
+                <option value="">Todas las Comunas</option>
+                {locaciones
+                  .find((l) => l.region === selectedRegion)
+                  ?.comunas.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+              </select>
+            </div>
 
             <button
               onClick={fetchAll}
@@ -292,10 +360,13 @@ export default function DashboardPage() {
         {/* KPI Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {/* Card: Casos Totales */}
-          <div className="bg-surface-container-low rounded-xl p-6 border border-outline-variant/10 hover:border-secondary/30 transition-all group">
+          <div 
+            onClick={() => navigateTo("/siniestros")}
+            className="bg-surface-container-low rounded-xl p-6 border border-outline-variant/10 hover:border-primary/40 hover:bg-primary/[0.02] cursor-pointer transition-all group"
+          >
             <div className="flex justify-between items-start mb-4">
               <p className="text-on-surface-variant text-[10px] font-bold uppercase tracking-widest">
-                Casos Totales
+                Universo Registrado
               </p>
               <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center">
                 <span className="material-symbols-outlined text-primary">
@@ -307,15 +378,16 @@ export default function DashboardPage() {
               {loading ? "..." : totalCasos}
             </h3>
             <p className="text-xs text-on-surface-variant">
-              Volumen total en el sistema
+              Total de carpetas en el sistema
             </p>
           </div>
 
           {/* Card: Pendientes Autorización */}
           <div
-            className={`bg-surface-container-low rounded-xl p-6 border-2 relative overflow-hidden group ${totalPendientes
-              ? "border-secondary/40"
-              : "border-outline-variant/10"
+            onClick={() => navigateTo("/pre-siniestro", { flag: "PEND_AUT" })}
+            className={`bg-surface-container-low rounded-xl p-6 border-2 relative overflow-hidden group cursor-pointer transition-all hover:scale-[1.02] ${totalPendientes
+              ? "border-secondary/40 hover:bg-secondary/[0.02]"
+              : "border-outline-variant/10 hover:border-secondary/20"
               }`}
           >
             <div className="absolute top-0 right-0 w-24 h-24 bg-secondary/5 rounded-full -mr-12 -mt-12 group-hover:scale-125 transition-transform duration-500"></div>
@@ -348,17 +420,20 @@ export default function DashboardPage() {
               Bloquean avance a Siniestro
             </p>
             {totalPendientes > 0 && (
-              <button className="w-full py-1.5 bg-secondary text-on-secondary text-[10px] font-bold rounded uppercase tracking-wider flex items-center justify-center gap-2 hover:brightness-110 transition-all">
+              <div className="w-full py-1.5 bg-secondary text-on-secondary text-[10px] font-bold rounded uppercase tracking-wider flex items-center justify-center gap-2 hover:brightness-110 transition-all">
                 <span className="material-symbols-outlined text-sm">
                   warning
                 </span>{" "}
                 Revisar hoy
-              </button>
+              </div>
             )}
           </div>
 
           {/* Card: Casos en Curso */}
-          <div className="bg-surface-container-low rounded-xl p-6 border border-outline-variant/10 hover:border-on-tertiary-container/30 transition-all group">
+          <div 
+            onClick={() => navigateTo("/siniestros", { modo: "ABIERTOS" })}
+            className="bg-surface-container-low rounded-xl p-6 border border-outline-variant/10 hover:border-on-tertiary-container/40 hover:bg-tertiary/[0.02] cursor-pointer transition-all hover:shadow-lg group"
+          >
             <div className="flex justify-between items-start mb-4">
               <p className="text-on-surface-variant text-[10px] font-bold uppercase tracking-widest">
                 Casos en Curso
@@ -391,6 +466,81 @@ export default function DashboardPage() {
               {totalNotificaciones}
             </h3>
             <p className="text-xs text-on-surface-variant">Pendientes por leer</p>
+          </div>
+        </div>
+
+        {/* Resumen por Estados (Requerimiento Usuario) */}
+        <div className="mb-12">
+          <h4 className="font-headline font-bold text-xl mb-6 flex items-center gap-3">
+            <span className="w-1.5 h-6 bg-primary rounded-full"></span>
+            Estado del Universo Total
+          </h4>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {[
+              { 
+                label: "Captación", 
+                count: porEtapa.find(x => x.etapa === "CAPTACION")?._count?._all || 0,
+                color: "bg-blue-500",
+                icon: "add_home",
+                action: () => navigateTo("/captaciones")
+              },
+              { 
+                label: "Pre-siniestro", 
+                count: porEtapa.find(x => x.etapa === "PRE_SINIESTRO")?._count?._all || 0,
+                color: "bg-amber-500",
+                icon: "assignment_late",
+                action: () => navigateTo("/pre-siniestro")
+              },
+              { 
+                label: "Inspección", 
+                count: porEstado.find(x => x.estado === "INSPECCION")?._count?._all || 0,
+                color: "bg-purple-500",
+                icon: "visibility",
+                action: () => navigateTo("/siniestros", { estado: "INSPECCION" })
+              },
+              { 
+                label: "Presupuesto", 
+                count: porEstado.find(x => x.estado === "PRESUPUESTO")?._count?._all || 0,
+                color: "bg-emerald-500",
+                icon: "calculate",
+                action: () => navigateTo("/siniestros", { estado: "PRESUPUESTO" })
+              },
+              { 
+                label: "Despacho Inf.", 
+                count: porEstado.find(x => x.estado === "ENVIO_INFORMACION")?._count?._all || 0,
+                color: "bg-sky-500",
+                icon: "send",
+                action: () => navigateTo("/siniestros", { estado: "ENVIO_INFORMACION" })
+              },
+              { 
+                label: "En Demanda", 
+                count: porEstado.find(x => x.estado === "DEMANDA")?._count?._all || 0,
+                color: "bg-red-500",
+                icon: "gavel",
+                action: () => navigateTo("/siniestros", { estado: "DEMANDA" })
+              },
+              { 
+                label: "Finalizados", 
+                count: porEtapa.find(x => x.etapa === "CERRADO")?._count?._all || 0,
+                color: "bg-slate-500",
+                icon: "task_alt",
+                action: () => navigateTo("/siniestros", { modo: "CERRADOS" })
+              }
+            ].map((stat, i) => (
+              <div 
+                key={i} 
+                onClick={stat.action}
+                className="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 flex flex-col items-center text-center hover:scale-[1.05] hover:shadow-xl hover:border-primary/20 cursor-pointer transition-all shadow-sm group"
+              >
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-3 ${stat.color} bg-opacity-10 text-on-surface group-hover:bg-opacity-20 transition-all`}>
+                  <span className="material-symbols-outlined text-xl group-hover:scale-110 transition-transform" style={{ color: stat.color.replace('bg-', 'var(--') }}>
+                    {stat.icon}
+                  </span>
+                </div>
+                <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">{stat.label}</p>
+                <p className="text-2xl font-black text-on-surface">{stat.count}</p>
+              </div>
+            ))}
           </div>
         </div>
 

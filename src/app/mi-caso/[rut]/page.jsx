@@ -81,10 +81,16 @@ export default function MiCasoTracker() {
                                             </span>
                                         </div>
                                         <h3 className="font-headline font-bold text-xl">{caso.nombreCliente}</h3>
-                                        <p className="text-on-surface-variant text-sm mt-1 flex items-center gap-1">
-                                            <span className="material-symbols-outlined text-[16px]">location_on</span>
-                                            {caso.direccion}{caso.comuna ? `, ${caso.comuna}` : ''}
-                                        </p>
+                                        <div className="flex flex-col gap-1 mt-1">
+                                            <p className="text-on-surface-variant text-sm flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[16px]">location_on</span>
+                                                {caso.direccion}{caso.comuna ? `, ${caso.comuna}` : ''}
+                                            </p>
+                                            <p className="text-on-surface-variant text-sm flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[16px]">person</span>
+                                                Asesor a cargo: <span className="font-semibold text-on-surface">{caso.asesor?.nombre || 'Por asignar'}</span>
+                                            </p>
+                                        </div>
                                     </div>
                                     <div className="text-left md:text-right">
                                         <p className="text-xs text-outline font-semibold uppercase tracking-widest mb-1">Última actualización</p>
@@ -100,24 +106,60 @@ export default function MiCasoTracker() {
                                 {/* Progress / Step indicator */}
                                 <div className="overflow-x-auto pb-4">
                                     <h4 className="text-xs text-outline font-semibold uppercase tracking-widest mb-4">Progreso del Caso</h4>
-                                    <div className="flex items-center min-w-[500px]">
-                                        <StepIndicator active={true} completed={["PRE_SINIESTRO", "SINIESTRO", "CERRADO"].includes(caso.etapa)} label="Captación" icon="add_a_photo" />
+                                    <div className="flex items-start min-w-[700px] justify-between px-4">
+                                        <StepIndicator 
+                                            active={true} 
+                                            completed={["PRE_SINIESTRO", "SINIESTRO", "CERRADO"].includes(caso.etapa)} 
+                                            label="Denuncia" 
+                                            icon="report_problem" 
+                                        />
                                         <StepConnector active={["PRE_SINIESTRO", "SINIESTRO", "CERRADO"].includes(caso.etapa)} />
 
-                                        <StepIndicator active={["PRE_SINIESTRO", "SINIESTRO", "CERRADO"].includes(caso.etapa)} completed={["SINIESTRO", "CERRADO"].includes(caso.etapa)} label="Pre-Siniestro" icon="fact_check" />
-                                        <StepConnector active={["SINIESTRO", "CERRADO"].includes(caso.etapa)} />
+                                        <StepIndicator 
+                                            active={caso.estado === "INSPECCION" || ["SINIESTRO", "CERRADO"].includes(caso.etapa)} 
+                                            completed={["PRESUPUESTO", "ENVIO_INFORMACION", "RECEPCION_PROPUESTA", "INFORME_FINAL"].includes(caso.estado) || caso.etapa === "CERRADO"} 
+                                            label="Inspección" 
+                                            icon="visibility" 
+                                        />
+                                        <StepConnector active={["PRESUPUESTO", "ENVIO_INFORMACION", "RECEPCION_PROPUESTA", "INFORME_FINAL"].includes(caso.estado) || caso.etapa === "CERRADO"} />
 
-                                        <StepIndicator active={["SINIESTRO", "CERRADO"].includes(caso.etapa)} completed={caso.etapa === "CERRADO"} label="Siniestro" icon="gavel" />
-                                        <StepConnector active={caso.etapa === "CERRADO"} />
+                                        <StepIndicator 
+                                            active={caso.estado === "PRESUPUESTO"} 
+                                            completed={["ENVIO_INFORMACION", "RECEPCION_PROPUESTA", "INFORME_FINAL"].includes(caso.estado) || caso.etapa === "CERRADO"} 
+                                            label="Presupuesto" 
+                                            icon="calculate" 
+                                        />
+                                        <StepConnector active={["ENVIO_INFORMACION", "RECEPCION_PROPUESTA", "INFORME_FINAL"].includes(caso.estado) || caso.etapa === "CERRADO"} />
 
-                                        <StepIndicator active={caso.etapa === "CERRADO"} completed={caso.etapa === "CERRADO"} label="Cerrado" icon="task_alt" />
+                                        <StepIndicator 
+                                            active={caso.estado === "ENVIO_INFORMACION"} 
+                                            completed={["RECEPCION_PROPUESTA", "INFORME_FINAL"].includes(caso.estado) || caso.etapa === "CERRADO"} 
+                                            label="Despacho Antecedentes" 
+                                            icon="send" 
+                                        />
+                                        <StepConnector active={["RECEPCION_PROPUESTA", "INFORME_FINAL"].includes(caso.estado) || caso.etapa === "CERRADO"} />
+
+                                        <StepIndicator 
+                                            active={caso.estado === "RECEPCION_PROPUESTA"} 
+                                            completed={caso.estado === "INFORME_FINAL" || caso.etapa === "CERRADO"} 
+                                            label="Recepción Propuesta" 
+                                            icon="mark_email_read" 
+                                        />
+                                        <StepConnector active={caso.estado === "INFORME_FINAL" || caso.etapa === "CERRADO"} />
+
+                                        <StepIndicator 
+                                            active={caso.estado === "INFORME_FINAL" || caso.etapa === "CERRADO"} 
+                                            completed={caso.etapa === "CERRADO"} 
+                                            label="Informe Final Recepcionado" 
+                                            icon="task_alt" 
+                                        />
                                     </div>
 
-                                    <div className="mt-8 bg-secondary-container/20 text-on-secondary-container p-4 rounded-xl flex flex-col md:flex-row items-start gap-4">
-                                        <span className="material-symbols-outlined text-secondary font-bold" style={{ fontVariationSettings: "'FILL' 1" }}>info</span>
+                                    <div className="mt-8 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 p-4 rounded-xl flex flex-col md:flex-row items-start gap-4">
+                                        <span className="material-symbols-outlined text-amber-500 font-bold" style={{ fontVariationSettings: "'FILL' 1" }}>info</span>
                                         <div>
                                             <p className="font-bold text-sm mb-1">Estado Actual: {caso.estado.replace(/_/g, ' ')}</p>
-                                            <p className="text-xs opacity-90">Tu caso se encuentra en la etapa de <strong>{caso.etapa.replace(/_/g, ' ')}</strong>. Nuestro equipo está procesando la información.</p>
+                                            <p className="text-xs opacity-90 leading-relaxed">Tu caso se encuentra en la etapa de <strong className="font-bold">{caso.etapa.replace(/_/g, ' ')}</strong>. Nuestro equipo está procesando la información.</p>
                                         </div>
                                     </div>
                                 </div>

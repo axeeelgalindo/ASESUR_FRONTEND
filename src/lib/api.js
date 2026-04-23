@@ -91,5 +91,22 @@ export async function apiPatch(path, body, config = {}) {
   return res.data;
 }
 
+/**
+ * ✅ multipart/form-data con método PUT (ej: reemplazo de archivos)
+ */
+export async function apiPutForm(path, formData, config = {}) {
+  const res = await api.put(path, formData, config);
+  return res.data;
+}
+
+/**
+ * ✅ multipart/form-data con método PATCH (ej: actualización parcial de fotos/gestiones)
+ */
+export async function apiPatchForm(path, formData, config = {}) {
+  const res = await api.patch(path, formData, config);
+  return res.data;
+}
+
+
 export { API_BASE, API_ORIGIN };
 export default api;
