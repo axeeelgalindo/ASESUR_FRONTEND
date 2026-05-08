@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { Section } from "@/components/ui/Section";
 import { Pagination } from "@/components/ui/Pagination";
+import { Modal } from "@/components/ui/Modal";
+import { Input } from "@/components/ui/Input";
 
 function cls(...s) {
   return s.filter(Boolean).join(" ");
@@ -61,6 +63,51 @@ export default function CaptacionesPage() {
   // Asignación de asesor (operaciones)
   const [asesores, setAsesores] = useState([]);
   const [asesorPick, setAsesorPick] = useState("");
+
+  const [openEditCaptacion, setOpenEditCaptacion] = useState(false);
+  const [editForm, setEditForm] = useState({
+    nombreCliente: "",
+    rutCliente: "",
+    direccion: "",
+    comuna: "",
+    ciudad: "",
+    numeroDocumentoCI: "",
+    firmaNotarial: "",
+    fechaOcurrencia: "",
+    antiguedadEdificio: "",
+    m2ViviendaTotal: "",
+  });
+
+  const openEdit = () => {
+    if (!selected) return;
+    setEditForm({
+      nombreCliente: selected.nombreCliente || "",
+      rutCliente: selected.rutCliente || "",
+      direccion: selected.direccion || "",
+      comuna: selected.comuna || "",
+      ciudad: selected.ciudad || "",
+      numeroDocumentoCI: selected.numeroDocumentoCI || "",
+      firmaNotarial: selected.firmaNotarial || "",
+      fechaOcurrencia: selected.fechaOcurrencia ? selected.fechaOcurrencia.split('T')[0] : "",
+      antiguedadEdificio: selected.antiguedadEdificio || "",
+      m2ViviendaTotal: selected.m2ViviendaTotal || "",
+    });
+    setOpenEditCaptacion(true);
+  };
+
+  const saveEdit = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      await apiPatch(`/casos/${selected.id}`, editForm);
+      setOpenEditCaptacion(false);
+      await openCaso(selected);
+    } catch (e) {
+      setError("Error al actualizar datos de captación");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const userRole = (session?.user?.rol || session?.user?.role || "USUARIO").toUpperCase();
   const canCreate = ["CAPTADOR", "ASESOR", "OPERACIONES", "SUPERADMIN"].includes(userRole);
@@ -395,9 +442,14 @@ export default function CaptacionesPage() {
               <h2 className="font-headline font-extrabold text-xl text-on-surface uppercase tracking-tight">
                 Detalle SIN-{String(selected?.folio).padStart(6, "0")}
               </h2>
-              <button onClick={() => setOpenDetail(false)} className="p-2 hover:bg-surface-container-highest rounded-lg transition-colors text-on-surface-variant">
-                <span className="material-symbols-outlined">close</span>
-              </button>
+              <div className="flex gap-2">
+                <button onClick={openEdit} className="p-2 hover:bg-surface-container-highest rounded-lg transition-colors text-primary flex items-center justify-center">
+                  <span className="material-symbols-outlined text-xl">edit</span>
+                </button>
+                <button onClick={() => setOpenDetail(false)} className="p-2 hover:bg-surface-container-highest rounded-lg transition-colors text-on-surface-variant flex items-center justify-center">
+                  <span className="material-symbols-outlined text-xl">close</span>
+                </button>
+              </div>
             </div>
 
             <div className="p-8 space-y-8">
@@ -408,9 +460,14 @@ export default function CaptacionesPage() {
                     <h3 className="text-on-surface font-bold mb-1">{selected.nombreCliente}</h3>
                     <p className="text-sm text-on-surface-variant">{selected.rutCliente}</p>
                   </div>
-                  <Pill tone={!!selected.asesorId ? "green" : "amber"}>
-                    {!!selected.asesorId ? "Asignado" : "Sin Asignar"}
-                  </Pill>
+                  <div className="flex flex-wrap gap-2">
+                    <Pill tone={!!selected.asesorId ? "green" : "amber"}>
+                      {!!selected.asesorId ? "Asignado" : "Sin Asignar"}
+                    </Pill>
+                    {!selected.vbPreFecha && (
+                      <Pill tone="amber">VB PENDIENTE</Pill>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 text-xs">
                   <div className="space-y-1">
@@ -427,7 +484,10 @@ export default function CaptacionesPage() {
               {/* Asignación (if Operations/Admin) */}
               {canAssignAsesor && (
                 <section className="space-y-4">
-                  <h4 className="font-headline font-bold text-sm uppercase tracking-widest text-secondary">Asignación de Asesor</h4>
+                  <h4 className="font-headline font-bold text-sm uppercase tracking-widest text-secondary">Validación y Asignación de Asesor</h4>
+                  <p className="text-[11px] text-on-surface-variant/70 font-medium">
+                    Al asignar un asesor, se otorgará automáticamente el Visto Bueno (VB) y el caso se escalará a la etapa de <span className="font-bold text-secondary">PRE-SINIESTRO</span>.
+                  </p>
                   <div className="flex gap-4">
                     <select
                       value={asesorPick}
@@ -442,9 +502,10 @@ export default function CaptacionesPage() {
                     <button
                       onClick={saveAsignacion}
                       disabled={busy || !asesorPick}
-                      className="bg-primary text-on-primary font-bold px-6 py-3 rounded-xl disabled:opacity-50 transition-all active:scale-95"
+                      className="bg-secondary text-on-secondary font-bold px-6 py-3 rounded-xl disabled:opacity-50 transition-all active:scale-95 flex items-center gap-2"
                     >
-                      Asignar
+                      <span className="material-symbols-outlined text-lg">fact_check</span>
+                      Dar VB y Escalar
                     </button>
                   </div>
                 </section>
@@ -496,6 +557,82 @@ export default function CaptacionesPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Editar Datos */}
+      <Modal
+        open={openEditCaptacion}
+        title="Editar Datos de Captación"
+        onClose={() => setOpenEditCaptacion(false)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setOpenEditCaptacion(false)} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button onClick={saveEdit} disabled={busy}>
+              Guardar Cambios
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-6 md:grid-cols-2">
+          <Input
+            label="Nombre Cliente"
+            value={editForm.nombreCliente}
+            onChange={(v) => setEditForm((p) => ({ ...p, nombreCliente: v }))}
+          />
+          <Input
+            label="RUT Cliente"
+            value={editForm.rutCliente}
+            onChange={(v) => setEditForm((p) => ({ ...p, rutCliente: v }))}
+          />
+          <div className="md:col-span-2">
+            <Input
+              label="Dirección"
+              value={editForm.direccion}
+              onChange={(v) => setEditForm((p) => ({ ...p, direccion: v }))}
+            />
+          </div>
+          <Input
+            label="Comuna"
+            value={editForm.comuna}
+            onChange={(v) => setEditForm((p) => ({ ...p, comuna: v }))}
+          />
+          <Input
+            label="Ciudad"
+            value={editForm.ciudad}
+            onChange={(v) => setEditForm((p) => ({ ...p, ciudad: v }))}
+          />
+          <Input
+            label="N° Documento C.I."
+            value={editForm.numeroDocumentoCI}
+            onChange={(v) => setEditForm((p) => ({ ...p, numeroDocumentoCI: v }))}
+          />
+          <Input
+            label="Firma Notarial"
+            value={editForm.firmaNotarial}
+            onChange={(v) => setEditForm((p) => ({ ...p, firmaNotarial: v }))}
+          />
+          <Input
+            label="Fecha Ocurrencia"
+            type="date"
+            value={editForm.fechaOcurrencia}
+            onChange={(v) => setEditForm((p) => ({ ...p, fechaOcurrencia: v }))}
+          />
+          <Input
+            label="Antigüedad Edificio (años)"
+            type="number"
+            value={editForm.antiguedadEdificio}
+            onChange={(v) => setEditForm((p) => ({ ...p, antiguedadEdificio: v }))}
+          />
+          <Input
+            label="m2 Vivienda Total"
+            type="number"
+            step="0.01"
+            value={editForm.m2ViviendaTotal}
+            onChange={(v) => setEditForm((p) => ({ ...p, m2ViviendaTotal: v }))}
+          />
+        </div>
+      </Modal>
     </main>
   );
 }

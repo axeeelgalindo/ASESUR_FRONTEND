@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import api, { apiGet, apiPost, apiPostForm, apiPatch, apiPutForm, fileUrl } from "@/lib/api";
+import { validateRut, formatRut } from "@/lib/rut";
+import comunasData from "@/lib/comunas.json";
 
 /**
  * Labels UI
@@ -13,6 +15,15 @@ const TipoCasoLabel = {
   HIPOTECARIO_A: "Hipotecario (A)",
   POLIZA_PARTICULAR_B: "Póliza Particular (B)",
 };
+
+const COMPANIAS_SEGURO = [
+  { value: "BCI", label: "BCI" },
+  { value: "Sura", label: "Sura" },
+  { value: "Consorcio", label: "Consorcio" },
+  { value: "Chilena Consolidada", label: "Chilena Consolidada" },
+  { value: "Mapfre", label: "Mapfre" },
+  { value: "Otra", label: "Otra..." },
+];
 
 const EstadoCasoLabel = {
   ABIERTO: "Abierto",
@@ -50,7 +61,6 @@ const PRE_REQ_DOCS_TIPO_B = [
   "RECEPCION_MUNICIPAL",
 ];
 const OPS_REQ_PASO_SINIESTRO_DOCS = [
-  "INSPECCION_ASESUR",
   "FOTOS_VIDEOS",
   "MANDATO_ASESORIA_NOTARIAL",
   "CONTRATO_ASESORIA",
@@ -88,7 +98,7 @@ export default function PreSiniestroPage() {
   const { data: session } = useSession();
   const userRole = session?.user?.rol || null;
   const userId = session?.user?.id || session?.user?.sub || null;
-  const isOps = userRole === "OPERACIONES" || userRole === "SUPERADMIN";
+  const isOps = ["OPERACIONES", "SUPERADMIN", "GERENTE", "MASTER"].includes(userRole);
   const isAsesor = userRole === "ASESOR";
   // Puede editar/reemplazar documentos
   const canEditDocs = (caso) => {
@@ -112,15 +122,47 @@ export default function PreSiniestroPage() {
   const [estadoFilter, setEstadoFilter] = useState("ALL");
   const [flagFilter, setFlagFilter] = useState("ALL");
   const [origenFilter, setOrigenFilter] = useState("ALL");
+  const [usuarios, setUsuarios] = useState([]);
+
+  // Datos para autorizar paso a siniestro
+  const [authData, setAuthData] = useState({
+    inspectorId: "",
+    numeroSiniestro: "",
+    companiaSeguro: "",
+  });
 
   const [openCreate, setOpenCreate] = useState(false);
-    const [newCaso, setNewCaso] = useState({
+  const [openAuth, setOpenAuth] = useState(false); // Modal para autorizar
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
+  const handleOpenCreate = () => {
+    setCreateError(null);
+    setOpenCreate(true);
+  };
+  const [newCaso, setNewCaso] = useState({
     tipo: "HIPOTECARIO_A",
-    esCasoAsesur: true,
     nombreCliente: "",
     rutCliente: "",
     direccion: "",
+    region: "",
+    comuna: "",
+    companiaSeguro: "",
+    numeroSiniestro: "",
+    esCasoAsesur: true,
+    asesorId: "",
+    archivos: {
+      INSPECCION_ASESUR: [],
+      FOTOS_VIDEOS: [],
+      MANDATO_ASESORIA_NOTARIAL: [],
+      CONTRATO_ASESORIA: [],
+      DENUNCIA_SINIESTRO_CORREO: [],
+      ASIGNACION_FORMAL_CORREO: [],
+    },
   });
+
+  // Lista de asesores para el selector (solo OPS/MASTER)
+  const [asesoresList, setAsesoresList] = useState([]);
 
   const [openDetail, setOpenDetail] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -174,6 +216,7 @@ export default function PreSiniestroPage() {
     nombreCliente: "",
     rutCliente: "",
     direccion: "",
+    region: "",
     comuna: "",
     ciudad: "",
     numeroDocumentoCI: "",
@@ -189,6 +232,7 @@ export default function PreSiniestroPage() {
       nombreCliente: selected.nombreCliente || "",
       rutCliente: selected.rutCliente || "",
       direccion: selected.direccion || "",
+      region: selected.region || "",
       comuna: selected.comuna || "",
       ciudad: selected.ciudad || "",
       numeroDocumentoCI: selected.numeroDocumentoCI || "",
@@ -248,9 +292,28 @@ export default function PreSiniestroPage() {
     return () => clearTimeout(handler);
   }, [query, pagina, limite, tipoFilter, estadoFilter, flagFilter, origenFilter]);
 
+  // Cargar lista de asesores disponibles para el selector
   useEffect(() => {
-    setPagina(1);
-  }, [tipoFilter, estadoFilter, flagFilter, origenFilter]);
+    apiGet("/usuarios?rol=ASESOR&activo=true").then((res) => {
+      const list = res?.data || res || [];
+      setAsesoresList(Array.isArray(list) ? list : []);
+    }).catch(() => { });
+  }, []);
+
+  useEffect(() => {
+    fetchUsuarios();
+  }, []);
+
+  const fetchUsuarios = async () => {
+    try {
+      const res = await apiGet("/usuarios");
+      // El backend devuelve { ok: true, usuarios: [...] }
+      if (res && res.usuarios) setUsuarios(res.usuarios);
+      else if (Array.isArray(res)) setUsuarios(res);
+    } catch (e) {
+      console.error("Error fetching users:", e);
+    }
+  };
 
   // Sync from URL
   useEffect(() => {
@@ -278,7 +341,7 @@ export default function PreSiniestroPage() {
       const res = await api.get(`/casos/exportar/excel?${p.toString()}`, {
         responseType: 'blob'
       });
-      
+
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -332,62 +395,103 @@ export default function PreSiniestroPage() {
   };
 
   const createCaso = async () => {
-    setError(null);
-    setBusy(true);
+    setCreateError(null);
+    setCreateBusy(true);
     try {
       const payload = {
         tipo: newCaso.tipo,
         nombreCliente: newCaso.nombreCliente.trim(),
         rutCliente: newCaso.rutCliente.trim(),
         direccion: newCaso.direccion.trim(),
+        region: newCaso.region,
+        comuna: newCaso.comuna,
+        esCasoAsesur: newCaso.esCasoAsesur,
+        // Si es asesor, el backend lo auto-asigna. Si no, pasamos el asesorId elegido.
+        ...(newCaso.asesorId ? { asesorId: newCaso.asesorId } : {}),
       };
       if (!payload.nombreCliente || !payload.rutCliente || !payload.direccion) {
         throw new Error("Completa nombre, RUT y dirección");
       }
-      await apiPost("/pre-siniestro/create", payload);
+      if (!validateRut(payload.rutCliente)) {
+        throw new Error("El RUT ingresado no es válido");
+      }
+      const created = await apiPost("/pre-siniestro/create", payload);
+      console.log("[createCaso] respuesta del servidor:", created);
+      // El backend retorna el caso directamente: { id, folio, etapa, ... }
+      const newCasoId = created?.id || created?.data?.id;
+
+      if (!newCasoId) {
+        throw new Error(`No se obtuvo el ID del caso creado. Respuesta: ${JSON.stringify(created)}`);
+      }
+
+      // Update insurance data if provided (no bloqueante)
+      if (newCaso.companiaSeguro?.trim() || newCaso.numeroSiniestro?.trim()) {
+        try {
+          await apiPatch(`/pre-siniestro/${newCasoId}/datos`, {
+            companiaSeguro: newCaso.companiaSeguro?.trim() || "",
+            numeroSiniestro: newCaso.numeroSiniestro?.trim() || "",
+          });
+        } catch (patchErr) {
+          console.error("Error guardando datos del siniestro:", patchErr?.response?.data || patchErr?.message);
+        }
+      }
+
+      // Upload files — subida individual para no cortar el flujo si uno falla
+      const fileTypes = [
+        "INSPECCION_ASESUR",
+        "FOTOS_VIDEOS",
+        "MANDATO_ASESORIA_NOTARIAL",
+        "CONTRATO_ASESORIA",
+        "DENUNCIA_SINIESTRO_CORREO",
+        "ASIGNACION_FORMAL_CORREO",
+      ];
+      for (const tipo of fileTypes) {
+        const files = newCaso.archivos[tipo];
+        if (files && files.length > 0) {
+          for (const file of files) {
+            try {
+              const fd = new FormData();
+              fd.append("tipo", tipo);
+              fd.append("titulo", file.name);
+              fd.append("file", file);
+              await apiPostForm(`/pre-siniestro/${newCasoId}/documentos`, fd);
+            } catch (uploadErr) {
+              console.error(`Error subiendo archivo ${tipo}:`, uploadErr?.response?.data || uploadErr?.message);
+            }
+          }
+        }
+      }
+
       setOpenCreate(false);
       setNewCaso({
         tipo: "HIPOTECARIO_A",
         nombreCliente: "",
         rutCliente: "",
         direccion: "",
+        region: "",
+        comuna: "",
+        companiaSeguro: "",
+        numeroSiniestro: "",
+        esCasoAsesur: true,
+        asesorId: "",
+        archivos: {
+          INSPECCION_ASESUR: [],
+          FOTOS_VIDEOS: [],
+          MANDATO_ASESORIA_NOTARIAL: [],
+          CONTRATO_ASESORIA: [],
+          DENUNCIA_SINIESTRO_CORREO: [],
+          ASIGNACION_FORMAL_CORREO: [],
+        },
       });
       await refresh();
     } catch (e) {
-      setError(e?.response?.data?.error || e?.message || "Error creando caso");
+      console.error("[createCaso] error:", e);
+      setCreateError(e?.response?.data?.error || e?.message || "Error creando caso");
     } finally {
-      setBusy(false);
+      setCreateBusy(false);
     }
   };
 
-  const doVB = async () => {
-    if (!selected?.id) return;
-    setError(null);
-    setBusy(true);
-
-    try {
-      // ✅ si viene desde CAPTACION: convierte a PRE_SINIESTRO
-      if (selected.etapa === "CAPTACION") {
-        await apiPost(`/captaciones/${selected.id}/vb-pre`, {});
-        const full = await apiGet(`/pre-siniestro/${selected.id}`); // ahora ya debería venir como PRE_SINIESTRO
-        setSelected(full);
-        setSelectedDocs(full.documentos || []);
-        await refresh();
-        return;
-      }
-
-      // ✅ si ya es PRE_SINIESTRO: vb normal (si quieres mantenerlo)
-      await apiPost(`/pre-siniestro/${selected.id}/vb`, {});
-      const full = await apiGet(`/pre-siniestro/${selected.id}`);
-      setSelected(full);
-      setSelectedDocs(full.documentos || []);
-      await refresh();
-    } catch (e) {
-      setError(e?.response?.data?.error || e?.message || "Error VB");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   // ✅ guardar campos siniestro
   const saveDatos = async () => {
@@ -409,8 +513,6 @@ export default function PreSiniestroPage() {
       payload.telefonoLiquidador = datosForm.telefonoLiquidador.trim() || null;
       payload.nombreAnalista = datosForm.nombreAnalista.trim() || null;
 
-      if (!payload.nombreLiquidador) throw new Error("Nombre del liquidador es obligatorio");
-      if (!payload.emailLiquidador) throw new Error("Email del liquidador es obligatorio");
 
       await apiPatch(`/pre-siniestro/${selected.id}/datos`, payload);
 
@@ -461,6 +563,7 @@ export default function PreSiniestroPage() {
       setSelectedDocs(full.documentos || []);
 
       setDocForm((p) => ({ ...p, titulo: "", file: null }));
+      setFileInputKey(prev => prev + 1);
     } catch (e) {
       setError(
         e?.response?.data?.error || e?.message || "Error subiendo documento"
@@ -525,26 +628,22 @@ export default function PreSiniestroPage() {
   };
 
   const autorizar = async () => {
-    if (!selected?.id) return;
-    setError(null);
+    if (!authData.numeroSiniestro || !authData.companiaSeguro) {
+      alert("Nro de Siniestro y Compañía son obligatorios.");
+      return;
+    }
     setBusy(true);
+    setError(null);
     try {
-      await apiPost(`/pre-siniestro/${selected.id}/autorizar`, {});
+      await apiPost(`/pre-siniestro/${selected.id}/autorizar`, authData);
+      setOpenAuth(false);
+      setOpenDetail(false);
       await refresh();
       const full = await apiGet(`/pre-siniestro/${selected.id}`);
       setSelected(full);
       setSelectedDocs(full.documentos || []);
     } catch (e) {
-      const faltantes = e?.response?.data?.faltantes;
-      if (Array.isArray(faltantes) && faltantes.length) {
-        setError(
-          `Faltan: ${faltantes
-            .map((x) => TipoDocumentoLabel[x] || x)
-            .join(", ")}`
-        );
-      } else {
-        setError(e?.response?.data?.error || e?.message || "Error autorizando");
-      }
+      setError("Error al autorizar caso");
     } finally {
       setBusy(false);
     }
@@ -653,7 +752,7 @@ export default function PreSiniestroPage() {
     const isTipoB = caso?.tipo === "POLIZA_PARTICULAR_B";
 
     const reqSolicitarOps = [];
-    // VB es obligatorio siempre (botón)
+    // VB es obligatorio siempre
     reqSolicitarOps.push({
       key: "VB",
       label: TipoDocumentoLabel["VB"] || "VB",
@@ -661,43 +760,37 @@ export default function PreSiniestroPage() {
       group: "REQ_SOLICITAR_OPS",
     });
 
-    // Documentos obligatorios para B
+    // Emails son obligatorios para AMBOS (A y B)
+    const emails = ["DENUNCIA_SINIESTRO_CORREO", "ASIGNACION_FORMAL_CORREO"];
+    for (const t of emails) reqSolicitarOps.push(mk(t, "REQ_SOLICITAR_OPS"));
+
+    // Documentos específicos para B
     if (isTipoB) {
       for (const t of PRE_REQ_DOCS_TIPO_B)
         reqSolicitarOps.push(mk(t, "REQ_SOLICITAR_OPS"));
     }
 
-    // Nota: El usuario dice "A no tiene obligatorios", asumimos que ni siquiera los mails de denuncia/asignación
-    // son bloqueantes para A si se quiere rapidez, PERO para avanzar a Siniestro suelen pedirse.
-    // Dejaremos los emails como opcionales para A según el texto: "A = no tiene obligatorios".
-
-    const emails = ["DENUNCIA_SINIESTRO_CORREO", "ASIGNACION_FORMAL_CORREO"];
     const otrosDocs = ["POLIZA", ...(!isTipoB ? PRE_REQ_DOCS_TIPO_B : [])];
 
-    if (isTipoB) {
-      // Para B, los emails sí son obligatorios
-      for (const t of emails) reqSolicitarOps.push(mk(t, "REQ_SOLICITAR_OPS"));
-    } else {
-      // Para A, los agregamos a otrosDocs
-      otrosDocs.push(...emails);
-    }
     const reqAutorizar = [];
     for (const t of OPS_REQ_PASO_SINIESTRO_DOCS)
       reqAutorizar.push(mk(t, "REQ_AUTORIZAR"));
 
+    // ✅ Campos de Estructura de Siniestro (Obligatorios para Ops)
     reqAutorizar.push({
-      key: "numeroSiniestro",
-      label: "Nº de siniestro (campo)",
-      ok: Boolean(caso?.numeroSiniestro),
-      group: "REQ_AUTORIZAR",
+      key: "COMPANIA",
+      label: "Compañía de Seguros",
+      ok: Boolean(caso?.companiaSeguro?.trim()),
+      group: "REQ_AUTORIZAR"
+    });
+    reqAutorizar.push({
+      key: "NUM_SINIESTRO",
+      label: "Nº de Siniestro",
+      ok: Boolean(caso?.numeroSiniestro?.trim()),
+      group: "REQ_AUTORIZAR"
     });
 
-    reqAutorizar.push({
-      key: "companiaSeguro",
-      label: "Compañía (campo)",
-      ok: Boolean(caso?.companiaSeguro),
-      group: "REQ_AUTORIZAR",
-    });
+    // 3) Otros / opcionales (solo para ordenar UI)
 
     // 3) Otros / opcionales (solo para ordenar UI)
     const opcionalesUI = [];
@@ -766,7 +859,7 @@ export default function PreSiniestroPage() {
               Exportar Excel
             </button>
             <button
-              onClick={() => setOpenCreate(true)}
+              onClick={handleOpenCreate}
               disabled={busy}
               className="flex h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-on-primary transition hover:bg-primary/90 shadow-lg shadow-primary/20"
             >
@@ -941,8 +1034,11 @@ export default function PreSiniestroPage() {
                       <div className="flex items-start gap-3">
                         <span className="material-symbols-outlined text-lg text-primary">location_on</span>
                         <div className="text-xs font-bold text-on-surface-variant">
-                          <p className="line-clamp-1">{c.direccion}</p>
-                          <p className="opacity-60">{c.comuna || ""}{c.comuna && c.ciudad ? ", " : ""}{c.ciudad || ""}</p>
+                          <p className="line-clamp-1">
+                            {c.direccion}
+                            {c.comuna && `, ${c.comuna}`}
+                            {c.region && ` (${c.region})`}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
@@ -1032,9 +1128,10 @@ export default function PreSiniestroPage() {
                           {c.asesor?.nombre || "No asignado"}
                         </td>
                         <td className="px-6 py-4">
-                          <div className="line-clamp-1 text-[11px] font-bold text-on-surface-variant">{c.direccion}</div>
-                          <div className="text-[10px] font-medium text-on-surface-variant/60">
-                            {c.comuna || ""} {c.ciudad || ""}
+                          <div className="line-clamp-1 text-[11px] font-bold text-on-surface-variant">
+                            {c.direccion}
+                            {c.comuna && `, ${c.comuna}`}
+                            {c.region && ` (${c.region})`}
                           </div>
                         </td>
                         <td className="px-6 py-4 text-xs font-bold text-on-surface-variant/50">{fmt(c.creadoEn)}</td>
@@ -1067,19 +1164,25 @@ export default function PreSiniestroPage() {
       <Modal
         open={openCreate}
         title="Nuevo Pre-Siniestro"
+        maxWidth="max-w-lg"
         onClose={() => setOpenCreate(false)}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setOpenCreate(false)} disabled={busy}>
+            <Button variant="secondary" onClick={() => setOpenCreate(false)} disabled={createBusy}>
               Cancelar
             </Button>
-            <Button onClick={createCaso} disabled={busy}>
-              Crear Caso
+            <Button onClick={createCaso} disabled={createBusy} loading={createBusy}>
+              {createBusy ? "Creando..." : "Crear Caso"}
             </Button>
           </>
         }
       >
         <div className="grid gap-6 md:grid-cols-2">
+          {createError && (
+            <div className="md:col-span-2 p-4 rounded-xl bg-red-500/10 text-red-600 text-sm font-bold">
+              {createError}
+            </div>
+          )}
           <div className="md:col-span-2">
             <Switch
               label="Caso ASESUR"
@@ -1088,10 +1191,36 @@ export default function PreSiniestroPage() {
               onChange={(v) => setNewCaso((p) => ({ ...p, esCasoAsesur: v }))}
             />
           </div>
+          <div className="md:col-span-2 grid gap-6 md:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Select
+                label="Compañía de Seguros *"
+                options={COMPANIAS_SEGURO}
+                value={["BCI", "Sura", "Consorcio", "Chilena Consolidada", "Mapfre", "HDI"].includes(newCaso.companiaSeguro) ? newCaso.companiaSeguro : (newCaso.companiaSeguro ? "Otra" : "")}
+                onChange={(v) => {
+                  if (v === "Otra") setNewCaso(p => ({ ...p, companiaSeguro: " " }));
+                  else setNewCaso(p => ({ ...p, companiaSeguro: v }));
+                }}
+              />
+              {!["", "BCI", "Sura", "Consorcio", "Chilena Consolidada", "Mapfre"].includes(newCaso.companiaSeguro) && newCaso.companiaSeguro !== undefined && (
+                <Input
+                  placeholder="Escribe el nombre de la compañía"
+                  value={newCaso.companiaSeguro.trim() === "" ? "" : newCaso.companiaSeguro}
+                  onChange={(v) => setNewCaso(p => ({ ...p, companiaSeguro: v }))}
+                />
+              )}
+            </div>
+            <Input
+              label="Nº de Siniestro *"
+              value={newCaso.numeroSiniestro}
+              onChange={(v) => setNewCaso((p) => ({ ...p, numeroSiniestro: v }))}
+              placeholder="Ej: 987654321"
+            />
+          </div>
           <Input
             label="RUT Cliente"
             value={newCaso.rutCliente}
-            onChange={(v) => setNewCaso((p) => ({ ...p, rutCliente: v }))}
+            onChange={(v) => setNewCaso((p) => ({ ...p, rutCliente: formatRut(v) }))}
             placeholder="12.345.678-9"
           />
           <div className="md:col-span-2">
@@ -1102,13 +1231,134 @@ export default function PreSiniestroPage() {
               placeholder="Nombre completo"
             />
           </div>
+          <div className="md:col-span-2 grid gap-6 md:grid-cols-2">
+            <Select
+              label="Región *"
+              options={comunasData.regions.map(r => ({ value: r.name, label: r.name }))}
+              value={newCaso.region}
+              onChange={(v) => setNewCaso(p => ({ ...p, region: v, comuna: "" }))}
+            />
+            <Select
+              label="Comuna *"
+              options={(comunasData.regions.find(r => r.name === newCaso.region)?.communes || []).map(c => ({ value: c.name, label: c.name }))}
+              value={newCaso.comuna}
+              onChange={(v) => setNewCaso(p => ({ ...p, comuna: v }))}
+              disabled={!newCaso.region}
+            />
+          </div>
           <div className="md:col-span-2">
             <Input
               label="Dirección"
               value={newCaso.direccion}
               onChange={(v) => setNewCaso((p) => ({ ...p, direccion: v }))}
-              placeholder="Calle, número, depto, ciudad..."
+              placeholder="Calle, número, depto..."
             />
+          </div>
+          {/* Selector de asesor: ASESOR se asigna solo, OPS/MASTER eligen */}
+          <div className="md:col-span-2">
+            {isAsesor ? (
+              <div className="flex items-center gap-3 rounded-xl bg-primary/5 border border-primary/20 p-3">
+                <span className="material-symbols-outlined text-primary text-lg">person_check</span>
+                <p className="text-sm text-on-surface font-medium">
+                  El caso se asignará automáticamente a <span className="font-black text-primary">{session?.user?.name || "usted"}</span>
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-on-surface-variant/70">Asesor Asignado *</p>
+                <select
+                  value={newCaso.asesorId}
+                  onChange={(e) => setNewCaso(p => ({ ...p, asesorId: e.target.value }))}
+                  className="w-full rounded-xl bg-surface-container-highest border-0 px-4 py-3 text-sm text-on-surface font-medium focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Sin asignar (queda en Pre-Siniestro)</option>
+                  {asesoresList.map(a => (
+                    <option key={a.id} value={a.id}>{a.nombre} — {a.email}</option>
+                  ))}
+                </select>
+                {newCaso.asesorId && (
+                  <p className="mt-1 text-[11px] text-primary font-semibold">✓ Con asesor asignado, el caso pasará directo a Siniestro</p>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="md:col-span-2 rounded-2xl border border-outline-variant/10 bg-surface-container-lowest overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center gap-2 px-5 py-4 border-b border-outline-variant/10">
+              <span className="material-symbols-outlined text-primary text-lg">upload_file</span>
+              <h3 className="text-sm font-black text-on-surface uppercase tracking-widest">Documentos del Caso</h3>
+            </div>
+
+            {/* Lista de documentos */}
+            <div className="divide-y divide-outline-variant/10">
+              {[
+                { key: "INSPECCION_ASESUR", icon: "find_in_page", label: "Informe de Inspección ASESUR", multiple: false, req: true },
+                { key: "FOTOS_VIDEOS", icon: "photo_library", label: "Fotos y Videos", multiple: true, req: true },
+                { key: "MANDATO_ASESORIA_NOTARIAL", icon: "gavel", label: "Mandato Asesoría Notarial", multiple: false, req: true },
+                { key: "CONTRATO_ASESORIA", icon: "description", label: "Contrato de Asesoría", multiple: false, req: true },
+                { key: "DENUNCIA_SINIESTRO_CORREO", icon: "mark_email_read", label: "Correo Denuncia Siniestro", multiple: false, req: true },
+                { key: "ASIGNACION_FORMAL_CORREO", icon: "forward_to_inbox", label: "Correo Asignación Formal Liq.", multiple: false, req: true },
+              ].map(({ key, icon, label, multiple, req }) => {
+                const files = newCaso.archivos[key] || [];
+                const hasFiles = files.length > 0;
+                return (
+                  <label
+                    key={key}
+                    className={cls(
+                      "flex items-center gap-4 px-5 py-3.5 cursor-pointer transition-colors",
+                      hasFiles
+                        ? "bg-green-500/5 hover:bg-green-500/10"
+                        : "hover:bg-surface-container"
+                    )}
+                  >
+                    {/* Ícono estado */}
+                    <span className={cls(
+                      "material-symbols-outlined text-xl flex-shrink-0",
+                      hasFiles ? "text-green-500" : "text-on-surface-variant/40"
+                    )}>
+                      {hasFiles ? "check_circle" : icon}
+                    </span>
+
+                    {/* Texto */}
+                    <div className="flex-1 min-w-0">
+                      <p className={cls(
+                        "text-sm font-semibold truncate",
+                        hasFiles ? "text-green-600" : "text-on-surface"
+                      )}>
+                        {label}
+                        {req && <span className="ml-1 text-red-500">*</span>}
+                      </p>
+                      <p className="text-[11px] text-on-surface-variant/50 truncate mt-0.5">
+                        {hasFiles
+                          ? `${files.length} archivo${files.length > 1 ? "s" : ""} seleccionado${files.length > 1 ? "s" : ""}`
+                          : multiple ? "Haz clic para seleccionar archivos" : "Haz clic para seleccionar archivo"}
+                      </p>
+                    </div>
+
+                    {/* Botón visual */}
+                    <span className={cls(
+                      "flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors",
+                      hasFiles
+                        ? "bg-green-500/10 text-green-600"
+                        : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
+                    )}>
+                      {hasFiles ? "Cambiar" : "Subir"}
+                    </span>
+
+                    {/* Input oculto */}
+                    <input
+                      type="file"
+                      multiple={multiple}
+                      className="sr-only"
+                      onChange={(e) => setNewCaso(p => ({
+                        ...p,
+                        archivos: { ...p.archivos, [key]: Array.from(e.target.files) }
+                      }))}
+                    />
+                  </label>
+                );
+              })}
+            </div>
           </div>
         </div>
       </Modal>
@@ -1138,6 +1388,60 @@ export default function PreSiniestroPage() {
             className="min-h-[140px] w-full rounded-2xl border border-outline-variant/20 bg-surface-container-low p-4 text-sm font-medium text-on-surface placeholder:text-on-surface-variant/40 outline-none transition focus:border-primary/50 focus:ring-4 focus:ring-primary/5"
             placeholder="Ej: Falta mandato notarial, fotos borrosas, o información de contacto incompleta..."
           />
+        </div>
+      </Modal>
+
+      <Modal
+        open={openAuth}
+        title="Autorizar paso a Siniestro"
+        onClose={() => setOpenAuth(false)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setOpenAuth(false)} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button onClick={autorizar} disabled={busy || !authData.companiaSeguro || !authData.numeroSiniestro}>
+              <span className="material-symbols-outlined text-sm">bolt</span>
+              Confirmar Autorización
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-4">
+          <p className="text-sm font-medium text-on-surface-variant">
+            Al autorizar el caso, este pasará a la etapa de Siniestro y se habilitará la gestión completa. Por favor confirma la Compañía de Seguros y el N° de Siniestro.
+          </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Input
+              label="Compañía de Seguros *"
+              value={authData.companiaSeguro}
+              onChange={(v) => setAuthData(p => ({ ...p, companiaSeguro: v }))}
+            />
+            <Input
+              label="N° de Siniestro *"
+              value={authData.numeroSiniestro}
+              onChange={(v) => setAuthData(p => ({ ...p, numeroSiniestro: v }))}
+            />
+            <div className="md:col-span-2">
+              <Select
+                label="Asignar Inspector"
+                value={authData.inspectorId}
+                onChange={(v) => setAuthData(p => ({ ...p, inspectorId: v }))}
+                options={[
+                  { value: "", label: "Dejar en blanco (Mismo asesor asignado)" },
+                  ...usuarios.filter(u => u.activo).map(u => ({
+                    value: u.id,
+                    label: `${u.nombre} - ${u.rol} (${u.email})`
+                  }))
+                ]}
+              />
+            </div>
+          </div>
+          {(!authData.companiaSeguro || !authData.numeroSiniestro) && (
+            <div className="rounded-xl border border-error/20 bg-error/5 p-3 text-[12px] font-bold text-error">
+              Ambos campos son obligatorios para autorizar.
+            </div>
+          )}
         </div>
       </Modal>
 
@@ -1306,16 +1610,21 @@ export default function PreSiniestroPage() {
               onChange={(v) => setEditForm((p) => ({ ...p, direccion: v }))}
             />
           </div>
-          <Input
-            label="Comuna"
-            value={editForm.comuna}
-            onChange={(v) => setEditForm((p) => ({ ...p, comuna: v }))}
-          />
-          <Input
-            label="Ciudad"
-            value={editForm.ciudad}
-            onChange={(v) => setEditForm((p) => ({ ...p, ciudad: v }))}
-          />
+          <div className="md:col-span-2 grid gap-6 md:grid-cols-2">
+            <Select
+              label="Región *"
+              options={comunasData.regions.map(r => ({ value: r.name, label: r.name }))}
+              value={editForm.region}
+              onChange={(v) => setEditForm(p => ({ ...p, region: v, comuna: "" }))}
+            />
+            <Select
+              label="Comuna *"
+              options={(comunasData.regions.find(r => r.name === editForm.region)?.communes || []).map(c => ({ value: c.name, label: c.name }))}
+              value={editForm.comuna}
+              onChange={(v) => setEditForm(p => ({ ...p, comuna: v }))}
+              disabled={!editForm.region}
+            />
+          </div>
           <Input
             label="N° Documento C.I."
             value={editForm.numeroDocumentoCI}
@@ -1388,14 +1697,18 @@ export default function PreSiniestroPage() {
                   >
                     {EstadoCasoLabel[selected.estado] || selected.estado}
                   </Pill>
-                  {selected.vbPreFecha ? <Pill tone="green">VB OK</Pill> : <Pill tone="amber">VB Pendiente</Pill>}
+                  {selected.vbPreFecha && <Pill tone="green">VB OK</Pill>}
                 </div>
               }
             >
               <div className="grid gap-6">
                 <div className="flex flex-col gap-1">
                   <h4 className="text-2xl font-black">{selected.nombreCliente}</h4>
-                  <p className="text-sm font-bold text-on-surface-variant/60">{selected.rutCliente} · {selected.direccion}</p>
+                  <p className="text-sm font-bold text-on-surface-variant/60">
+                    {selected.rutCliente} · {selected.direccion}
+                    {selected.comuna && `, ${selected.comuna}`}
+                    {selected.region && ` (${selected.region})`}
+                  </p>
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -1497,15 +1810,6 @@ export default function PreSiniestroPage() {
                 <Button
                   variant="secondary"
                   className="flex-1 min-w-[180px]"
-                  onClick={doVB}
-                  disabled={busy || Boolean(selected.vbPreFecha)}
-                >
-                  <span className="material-symbols-outlined text-sm">check_circle</span>
-                  {selected.etapa === "CAPTACION" ? "Dar VB y Escalar" : "VB Pre-Siniestro"}
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="flex-1 min-w-[180px]"
                   onClick={solicitarOps}
                   disabled={busy || !preReadyForRequestOps || selected?.estado === "PENDIENTE_AUTORIZACION"}
                 >
@@ -1515,7 +1819,14 @@ export default function PreSiniestroPage() {
                 {isOps && (
                   <Button
                     className="flex-1 min-w-[180px]"
-                    onClick={autorizar}
+                    onClick={() => {
+                      setAuthData({
+                        inspectorId: selected.inspectorId || "",
+                        numeroSiniestro: selected.numeroSiniestro || "",
+                        companiaSeguro: selected.companiaSeguro || "",
+                      });
+                      setOpenAuth(true);
+                    }}
                     disabled={busy || !opsReadyToAuthorize || selected?.estado !== "PENDIENTE_AUTORIZACION"}
                   >
                     <span className="material-symbols-outlined text-sm">bolt</span>
@@ -1568,17 +1879,32 @@ export default function PreSiniestroPage() {
             <Section title="Estructura del Siniestro" desc="Información obligatoria para paso a Siniestro">
               <div className="grid gap-6">
                 <div className="grid gap-4 md:grid-cols-2">
-                  <Input
-                    label="Compañía de Seguros *"
-                    value={datosForm.companiaSeguro}
-                    onChange={(v) => setDatosForm((p) => ({ ...p, companiaSeguro: v }))}
-                    placeholder="Ej: HDI, BCI, Zurich..."
-                  />
+                  <div className="flex flex-col gap-2">
+                    <Select
+                      label="Compañía de Seguros *"
+                      options={COMPANIAS_SEGURO}
+                      value={["BCI", "Sura", "Consorcio", "Chilena Consolidada", "Mapfre", "HDI"].includes(datosForm.companiaSeguro) ? datosForm.companiaSeguro : (datosForm.companiaSeguro ? "Otra" : "")}
+                      onChange={(v) => {
+                        if (v === "Otra") setDatosForm(p => ({ ...p, companiaSeguro: " " }));
+                        else setDatosForm(p => ({ ...p, companiaSeguro: v }));
+                      }}
+                      disabled={!isOps}
+                    />
+                    {!["", "BCI", "Sura", "Consorcio", "Chilena Consolidada", "Mapfre"].includes(datosForm.companiaSeguro) && datosForm.companiaSeguro !== undefined && (
+                      <Input
+                        placeholder="Escribe el nombre de la compañía"
+                        value={datosForm.companiaSeguro.trim() === "" ? "" : datosForm.companiaSeguro}
+                        onChange={(v) => setDatosForm(p => ({ ...p, companiaSeguro: v }))}
+                        disabled={!isOps}
+                      />
+                    )}
+                  </div>
                   <Input
                     label="Nº de Siniestro *"
                     value={datosForm.numeroSiniestro}
                     onChange={(v) => setDatosForm((p) => ({ ...p, numeroSiniestro: v }))}
                     placeholder="Ej: 987654321"
+                    disabled={!isOps}
                   />
                 </div>
 
@@ -1586,37 +1912,43 @@ export default function PreSiniestroPage() {
                   <h6 className="mb-4 text-xs font-black uppercase tracking-widest text-on-surface-variant/50">Datos del Liquidador</h6>
                   <div className="grid gap-6 md:grid-cols-2">
                     <Input
-                      label="Nombre Liquidador *"
+                      label="Nombre Liquidador (Opcional en Pre-Siniestro)"
                       value={datosForm.nombreLiquidador}
                       onChange={(v) => setDatosForm((p) => ({ ...p, nombreLiquidador: v }))}
                       placeholder="Nombre del liquidador asignado"
+                      disabled={!isOps}
                     />
                     <Input
-                      label="Email Liquidador *"
+                      label="Email Liquidador (Opcional en Pre-Siniestro)"
                       value={datosForm.emailLiquidador}
                       onChange={(v) => setDatosForm((p) => ({ ...p, emailLiquidador: v }))}
                       placeholder="ejemplo@liquidador.cl"
+                      disabled={!isOps}
                     />
                     <Input
                       label="Teléfono Liquidador (Opcional)"
                       value={datosForm.telefonoLiquidador}
                       onChange={(v) => setDatosForm((p) => ({ ...p, telefonoLiquidador: v }))}
                       placeholder="+56 9 1234 5678"
+                      disabled={!isOps}
                     />
                     <Input
                       label="Analista a cargo (Opcional)"
                       value={datosForm.nombreAnalista}
                       onChange={(v) => setDatosForm((p) => ({ ...p, nombreAnalista: v }))}
                       placeholder="Nombre del analista de la compañía"
+                      disabled={!isOps}
                     />
                   </div>
 
-                  <div className="mt-8 flex justify-end gap-3">
-                    <Button onClick={saveDatos} disabled={busy}>
-                      <span className="material-symbols-outlined text-sm">save</span>
-                      Guardar Cambios
-                    </Button>
-                  </div>
+                  {isOps && (
+                    <div className="mt-8 flex justify-end gap-3">
+                      <Button onClick={saveDatos} disabled={busy}>
+                        <span className="material-symbols-outlined text-sm">save</span>
+                        Guardar Cambios
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </Section>
@@ -1667,14 +1999,6 @@ export default function PreSiniestroPage() {
                     value={docForm.tipo}
                     onChange={(v) => setDocForm((p) => ({ ...p, tipo: v }))}
                     options={Object.keys(TipoDocumentoLabel)
-                      .filter((k) => {
-                        if (isAsesor) {
-                          // El asesor NO sube inspección ni fotos (eso viene de app), 
-                          // pero SI debe poder subir mandato y contrato
-                          if (k === "INSPECCION_ASESUR" || k === "FOTOS_VIDEOS") return false;
-                        }
-                        return true;
-                      })
                       .map((k) => ({ value: k, label: TipoDocumentoLabel[k] }))}
                   />
                   <Input
@@ -1688,6 +2012,7 @@ export default function PreSiniestroPage() {
                   <span className="ml-1 text-[11px] font-black uppercase tracking-wider text-on-surface-variant/70">Seleccionar Archivo</span>
                   <div className="relative flex items-center justify-center rounded-2xl border-2 border-dashed border-outline-variant/20 bg-surface-container-lowest px-6 py-10 transition hover:border-primary/30">
                     <input
+                      key={fileInputKey}
                       type="file"
                       accept="application/pdf,image/*"
                       onChange={(e) => setDocForm((p) => ({ ...p, file: e.target.files?.[0] || null }))}
@@ -1718,7 +2043,7 @@ export default function PreSiniestroPage() {
                     <p className="text-sm font-bold">Sin registros</p>
                   </div>
                 ) : (
-                selectedDocs.map((d) => (
+                  selectedDocs.map((d) => (
                     <div key={d.id} className="group flex items-center justify-between rounded-2xl border border-outline-variant/10 bg-surface-container-low p-4 transition hover:bg-surface-container-high">
                       <div className="flex items-center gap-4">
                         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-surface-container-highest text-primary">

@@ -62,12 +62,14 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }) {
       {/* Brand & Toggle */}
       <div className={`px-6 flex items-center mb-10 ${isCollapsed ? "justify-center px-0" : "justify-between"}`}>
         <div className={`flex items-center gap-3 ${isCollapsed ? "hidden" : ""}`}>
-          <div className="w-8 h-8 rounded bg-secondary-container flex items-center justify-center">
-            <span className="material-symbols-outlined text-on-secondary" style={{ fontVariationSettings: "'FILL' 1" }}>shield</span>
+          <div className="w-8 h-8 rounded overflow-hidden flex items-center justify-center flex-shrink-0">
+            <img src="/icon.jpeg" alt="ASESUR Logo" className="w-full h-full object-cover" />
           </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tighter text-on-surface">ASESUR</h1>
-          </div>
+          {!isCollapsed && (
+            <div>
+              <h1 className="text-xl font-bold tracking-tighter text-on-surface">ASESUR</h1>
+            </div>
+          )}
         </div>
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
@@ -82,7 +84,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }) {
       {/* Navigation — filtrado por rol */}
       <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
         {/* Dashboard: todos menos CAPTADOR */}
-        {userRole !== "CAPTADOR" && userRole !== "ASESOR" && (
+        {userRole !== "CAPTADOR" && (
           <NavItem href="/dashboard" icon="dashboard" label="Dashboard" isCollapsed={isCollapsed} />
         )}
 
@@ -97,7 +99,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }) {
         )}
 
         {/* Siniestros: no CAPTADOR */}
-        {userRole !== "CAPTADOR" && userRole !== "ASESOR" && (
+        {userRole !== "CAPTADOR" && (
           <NavItem href="/siniestros" icon="emergency" label="Siniestros" isCollapsed={isCollapsed} />
         )}
 

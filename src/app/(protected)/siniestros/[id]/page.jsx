@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import api, { apiGet, apiPost, apiPostForm, apiPatch, apiPutForm, apiDel, fileUrl } from "@/lib/api";
+import comunasData from "@/lib/comunas.json";
 
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
@@ -13,6 +14,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Section } from "@/components/ui/Section";
 import { Modal } from "@/components/ui/Modal";
 import { Tabs } from "@/components/ui/Tabs";
+import { Switch } from "@/components/ui/Switch";
 
 const TipoCasoLabel = {
     HIPOTECARIO_A: "Hipotecario (A)",
@@ -33,6 +35,9 @@ const TipoDocumentoLabel = {
     ENVIO_INFORMACION_LIQUIDADOR: "Envío antecedentes liquidador (respaldo)",
     RESPALDO_PAGO_HONORARIOS: "Respaldo pago honorarios",
     BOLETA: "Boleta",
+    CERT_DOMINIO_VIGENTE: "Certificado Dominio Vigente (Solo B)",
+    CERT_HIPOTECAS_Y_GRAVAMENES: "Certificado Hipotecas y Gravámenes (Solo B)",
+    RECEPCION_MUNICIPAL: "Recepción Municipal (Solo B)",
     OTRO: "Otro",
 };
 
@@ -62,6 +67,7 @@ const EstadoSiniestroLabel = {
     INFORME_FINAL: "Liquidación - Informe final",
     COBRANZA: "Cobranza",
     FACTURACION: "Facturación",
+    DESISTIMIENTO: "Desistido",
 };
 
 const TipoGestionLabel = {
@@ -127,6 +133,7 @@ export default function SiniestroDetailPage() {
     const { data: session } = useSession();
     const userRole = session?.user?.rol || null;
     const userId = session?.user?.id || session?.user?.sub || null;
+    const isOps = ["OPERACIONES", "SUPERADMIN", "GERENTE", "MASTER", "FINANZAS"].includes(userRole);
 
     // Puede reemplazar documentos: ASESOR asignado, OPERACIONES, SUPERADMIN, GERENTE, MASTER
     const canEditDocs = (caso) => {
@@ -154,6 +161,8 @@ export default function SiniestroDetailPage() {
         fechaRecepcion: "",
         observaciones: "",
         file: null,
+        aceptado: true, // Para RECEPCION_PROPUESTA
+        impugnado: false, // Para INFORME_FINAL
     });
     const [factForm, setFactForm] = useState({
         estadoFacturacion: "PENDIENTE",
@@ -197,7 +206,7 @@ export default function SiniestroDetailPage() {
     const [infoErr, setInfoErr] = useState(null);
     const [infoForm, setInfoForm] = useState({
         nombreCliente: "", rutCliente: "",
-        direccion: "", comuna: "", ciudad: "",
+        direccion: "", region: "", comuna: "", ciudad: "",
         companiaSeguro: "", numeroSiniestro: "",
         nombreLiquidador: "", emailLiquidador: "", telefonoLiquidador: "",
         nombreAnalista: "", estado: "",
@@ -260,6 +269,7 @@ export default function SiniestroDetailPage() {
             nombreCliente: full.nombreCliente || "",
             rutCliente: full.rutCliente || "",
             direccion: full.direccion || "",
+            region: full.region || "",
             comuna: full.comuna || "",
             ciudad: full.ciudad || "",
             companiaSeguro: full.companiaSeguro || "",
@@ -271,6 +281,25 @@ export default function SiniestroDetailPage() {
             estado: full.estado || "",
         });
     };
+
+    // ✅ Cierre manual de gestiones con lógica específica
+    const completarGestionSpec = async (g, opts = {}) => {
+        setBusy(true);
+        try {
+            const fd = new FormData();
+            if (opts.file) fd.append("file", opts.file);
+            if (opts.fechaRecepcion) fd.append("fechaRecepcion", opts.fechaRecepcion);
+            if (opts.observaciones) fd.append("observaciones", opts.observaciones);
+            
+            await apiPostForm(`/siniestros/${id}/gestiones/${g.id}/completar`, fd);
+            await reloadSelected();
+        } catch (e) {
+            setError(e?.response?.data?.error || "Error completando gestión");
+        } finally {
+            setBusy(false);
+        }
+    };
+
 
     // Actions
     const toggleFotoWord = (fid) => {
@@ -371,6 +400,10 @@ export default function SiniestroDetailPage() {
 
     // ✅ Guardar datos generales del siniestro
     const saveInfoForm = async () => {
+        if (!infoForm.nombreLiquidador?.trim() || !infoForm.emailLiquidador?.trim()) {
+            setInfoErr("El Nombre y Email del Liquidador son obligatorios en esta etapa.");
+            return;
+        }
         setInfoErr(null);
         setInfoSaved(null);
         setBusy(true);
@@ -596,6 +629,9 @@ export default function SiniestroDetailPage() {
             fechaRecepcion: "",
             observaciones: "",
             file: null,
+            aceptado: true,
+            impugnado: false,
+            montoPresupuesto: "",
         });
     };
 
@@ -608,9 +644,20 @@ export default function SiniestroDetailPage() {
             fd.append("observaciones", completeModal.observaciones);
             if (completeModal.fechaRecepcion) fd.append("fechaRecepcion", completeModal.fechaRecepcion);
             if (completeModal.file) fd.append("file", completeModal.file);
+            
+            // Lógica específica
+            if (completeModal.gestion.tipo === "RECEPCION_PROPUESTA") {
+                fd.append("aceptado", completeModal.aceptado);
+            }
+            if (completeModal.gestion.tipo === "INFORME_FINAL") {
+                fd.append("impugnado", completeModal.impugnado);
+            }
+            if (completeModal.gestion.tipo === "PRESUPUESTO" && completeModal.montoPresupuesto) {
+                fd.append("montoPresupuesto", completeModal.montoPresupuesto);
+            }
 
             await apiPostForm(`/siniestros/${id}/gestiones/${completeModal.gestion.id}/completar`, fd);
-            setCompleteModal({ open: false, gestion: null, file: null });
+            setCompleteModal({ open: false, gestion: null, file: null, aceptado: true, impugnado: false, montoPresupuesto: "" });
             await reloadSelected();
         } catch (e) {
             setError(e?.response?.data?.error || "Error completando gestión.");
@@ -642,6 +689,35 @@ export default function SiniestroDetailPage() {
             setInfoSaved("Información general de facturación guardada correctamente.");
         } catch (e) {
             setError(e?.response?.data?.error || "Error guardando facturación.");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    // ✅ DESISTIMIENTO
+    const [openDesistir, setOpenDesistir] = useState(false);
+    const [desistirForm, setDesistirForm] = useState({
+        observaciones: "",
+        asunto: "",
+        mensaje: "",
+        emailLiquidador: "",
+        enviarEmail: false
+    });
+
+    const desistir = async () => {
+        try {
+            setBusy(true);
+            await apiPost(`/casos/${id}/desistir`, {
+                observaciones: desistirForm.observaciones,
+                emailLiquidador: desistirForm.enviarEmail ? desistirForm.emailLiquidador : null,
+                asunto: desistirForm.enviarEmail ? desistirForm.asunto : null,
+                mensaje: desistirForm.enviarEmail ? desistirForm.mensaje : null
+            });
+            setOpenDesistir(false);
+            await reloadSelected();
+            setInfoSaved("Caso marcado como DESISTIDO.");
+        } catch (e) {
+            setError(e?.response?.data?.error || "Error al desistir caso.");
         } finally {
             setBusy(false);
         }
@@ -868,8 +944,8 @@ export default function SiniestroDetailPage() {
                     <span className="text-sm font-black uppercase tracking-tighter">Volver al Panel</span>
                 </button>
 
-                <Pill tone={isCerradoSelected ? "gray" : "green"}>
-                    {isCerradoSelected ? "Finalizado" : "En Liquidación"}
+                <Pill tone={selected?.estado === "DESISTIMIENTO" ? "red" : (isCerradoSelected ? "gray" : "green")}>
+                    {selected?.estado === "DESISTIMIENTO" ? "Desistido" : (isCerradoSelected ? "Finalizado" : "En Liquidación")}
                 </Pill>
             </div>
 
@@ -956,6 +1032,25 @@ export default function SiniestroDetailPage() {
                                                 <span className="material-symbols-outlined text-base leading-none">analytics</span>
                                                 Presupuesto
                                             </Button>
+                                            {(isOps || userRole === "MASTER" || userRole === "SUPERADMIN") && (
+                                                <Button 
+                                                    variant="ghost" 
+                                                    onClick={() => {
+                                                        setDesistirForm({
+                                                            observaciones: "",
+                                                            asunto: `Desistimiento de Siniestro - Folio SIN-${String(selected?.folio).padStart(6, "0")}`,
+                                                            mensaje: `Estimado Liquidador,\n\nPor medio de la presente informamos el desistimiento del siniestro del cliente ${selected?.nombreCliente}, folio ${selected?.folio}.\n\nQuedamos atentos a sus comentarios.\n\nSaludos.`,
+                                                            emailLiquidador: selected?.emailLiquidador || "",
+                                                            enviarEmail: true
+                                                        });
+                                                        setOpenDesistir(true);
+                                                    }}
+                                                    className="h-9 px-4 text-error hover:bg-error/10 text-xs font-black uppercase tracking-widest"
+                                                >
+                                                    <span className="material-symbols-outlined text-base">cancel</span>
+                                                    Desistir
+                                                </Button>
+                                            )}
                                         </>
                                     )}
                                 </div>
@@ -986,8 +1081,19 @@ export default function SiniestroDetailPage() {
                                             <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">Ubicación</span>
                                             <Input label="Dirección" value={infoForm.direccion} onChange={v => setInfoForm(p => ({ ...p, direccion: v }))} />
                                             <div className="grid grid-cols-2 gap-3">
-                                                <Input label="Comuna" value={infoForm.comuna} onChange={v => setInfoForm(p => ({ ...p, comuna: v }))} />
-                                                <Input label="Ciudad" value={infoForm.ciudad} onChange={v => setInfoForm(p => ({ ...p, ciudad: v }))} />
+                                                <Select
+                                                    label="Región *"
+                                                    options={comunasData.regions.map(r => ({ value: r.name, label: r.name }))}
+                                                    value={infoForm.region}
+                                                    onChange={(v) => setInfoForm(p => ({ ...p, region: v, comuna: "" }))}
+                                                />
+                                                <Select
+                                                    label="Comuna *"
+                                                    options={(comunasData.regions.find(r => r.name === infoForm.region)?.communes || []).map(c => ({ value: c.name, label: c.name }))}
+                                                    value={infoForm.comuna}
+                                                    onChange={(v) => setInfoForm(p => ({ ...p, comuna: v }))}
+                                                    disabled={!infoForm.region}
+                                                />
                                             </div>
                                         </div>
                                     </div>
@@ -1008,7 +1114,37 @@ export default function SiniestroDetailPage() {
                                             <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">Ubicación</span>
                                             <div className="space-y-0.5">
                                                 <p className="text-base font-black text-on-surface leading-tight">{selected.direccion}</p>
-                                                <p className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-wider">{selected.comuna}, {selected.ciudad}</p>
+                                                <p className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-wider">
+                                                    {selected.comuna}{selected.region ? `, ${selected.region}` : ""}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col gap-1.5 rounded-2xl bg-surface-container-lowest/50 p-5 border border-outline-variant/10 shadow-sm transition-all hover:bg-surface-container-lowest md:col-span-2">
+                                            <div className="grid gap-6 md:grid-cols-2">
+                                                <div>
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">Asesor Asignado</span>
+                                                    <div className="mt-2 flex items-center gap-3">
+                                                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                                                            <span className="material-symbols-outlined text-xl">person</span>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-sm font-black">{selected.asesor?.nombre || "No asignado"}</div>
+                                                            <div className="text-[11px] font-medium text-on-surface-variant/60">{selected.asesor?.email || "—"}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">Inspector</span>
+                                                    <div className="mt-2 flex items-center gap-3">
+                                                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary/10 text-secondary">
+                                                            <span className="material-symbols-outlined text-xl">plumbing</span>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-sm font-black">{selected.inspector?.nombre || selected.asesor?.nombre || "No asignado"}</div>
+                                                            <div className="text-[11px] font-medium text-on-surface-variant/60">{selected.inspector?.email || selected.asesor?.email || "—"}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -1020,8 +1156,8 @@ export default function SiniestroDetailPage() {
                                         <span className="sm:col-span-2 text-[10px] font-black uppercase tracking-widest text-primary/60">Datos del Seguro y Liquidación</span>
                                         <Input label="Compañía Seguro" value={infoForm.companiaSeguro} onChange={v => setInfoForm(p => ({ ...p, companiaSeguro: v }))} />
                                         <Input label="N° Siniestro Aseguradora" value={infoForm.numeroSiniestro} onChange={v => setInfoForm(p => ({ ...p, numeroSiniestro: v }))} />
-                                        <Input label="Nombre Liquidador" value={infoForm.nombreLiquidador} onChange={v => setInfoForm(p => ({ ...p, nombreLiquidador: v }))} />
-                                        <Input label="Email Liquidador" type="email" value={infoForm.emailLiquidador} onChange={v => setInfoForm(p => ({ ...p, emailLiquidador: v }))} />
+                                        <Input label="Nombre Liquidador *" value={infoForm.nombreLiquidador} onChange={v => setInfoForm(p => ({ ...p, nombreLiquidador: v }))} />
+                                        <Input label="Email Liquidador *" type="email" value={infoForm.emailLiquidador} onChange={v => setInfoForm(p => ({ ...p, emailLiquidador: v }))} />
                                         <Input label="Teléfono Liquidador" value={infoForm.telefonoLiquidador} onChange={v => setInfoForm(p => ({ ...p, telefonoLiquidador: v }))} />
                                         <Input label="Nombre Analista" value={infoForm.nombreAnalista} onChange={v => setInfoForm(p => ({ ...p, nombreAnalista: v }))} />
                                         <div className="sm:col-span-2">
@@ -1077,193 +1213,228 @@ export default function SiniestroDetailPage() {
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
                             {tab === "antecedentes" && (
                                 <Section
-                                    title="Bitácora (Flujo de Gestiones)"
-                                    desc="Seguimiento de hitos y ejecución"
+                                    title="Gestión de Siniestro (Workflow)"
+                                    desc="Progreso cronológico del caso y hitos de liquidación"
                                     right={
-                                        <Button variant="secondary" onClick={impugnar} disabled={busy} className="h-10 border-error/20 text-error hover:bg-error/5 text-xs">
-                                            <span className="material-symbols-outlined text-lg">warning</span>
-                                            Impugnar Informe
-                                        </Button>
+                                        <div className="flex gap-2">
+                                            <Button variant="secondary" onClick={impugnar} disabled={busy} className="h-10 border-error/20 text-error hover:bg-error/5 text-xs">
+                                                <span className="material-symbols-outlined text-lg">warning</span>
+                                                Impugnar Informe
+                                            </Button>
+                                        </div>
                                     }
                                 >
-                                    <div className="overflow-x-auto rounded-[2rem] border border-outline-variant/10 bg-surface-container-lowest/50 shadow-sm mb-6">
-                                        <table className="w-full text-left text-sm whitespace-nowrap">
-                                            <thead className="bg-surface-container-low/50 text-on-surface-variant font-black uppercase tracking-wider text-[10px] border-b border-outline-variant/10">
-                                                <tr>
-                                                    <th className="px-6 py-4">Gestión / Acción</th>
-                                                    <th className="px-6 py-4">Estado</th>
-                                                    <th className="px-6 py-4">Programado</th>
-                                                    <th className="px-6 py-4">Finalizado</th>
-                                                    <th className="px-6 py-4 text-center">Acciones</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-outline-variant/5 text-on-surface/90">
-                                                {selected.gestiones?.map((g) => {
-                                                    const tone = g.estado === "COMPLETADA" ? "green" : g.estado === "BLOQUEADA" ? "red" : g.estado === "EN_PROGRESO" ? "amber" : "gray";
-                                                    const icon = { INSPECCION: "hail", PRESUPUESTO: "request_quote", ENVIO_INFORMACION: "send", APROBADA: "check_circle", FACTURACION: "payments" }[g.tipo] || "assignment";
-                                                    const editing = !!editGestion[g.id];
-                                                    const ef = editGestion[g.id] || {};
-                                                    const isExpanded = expandedGestion === g.id;
+                                    <div className="relative border-l-2 border-outline-variant/20 ml-6 pl-10 space-y-10 pb-10">
+                                        {(() => {
+                                            const weight = {
+                                                INSPECCION: 1,
+                                                PRESUPUESTO: 2,
+                                                DESPACHO_ANTECEDENTES_LIQUIDADOR: 3,
+                                                RECEPCION_PROPUESTA: 4,
+                                                INFORME_FINAL: 5,
+                                                IMPUGNACION: 6,
+                                                CIERRE: 7,
+                                                DESPACHO_BOLETA_INFORME_CLIENTE: 8
+                                            };
+                                            const sorted = [...(selected.gestiones || [])].sort((a, b) => {
+                                                const wA = weight[a.tipo] || 999;
+                                                const wB = weight[b.tipo] || 999;
+                                                if (wA !== wB) return wA - wB;
+                                                return new Date(a.creadoEn) - new Date(b.creadoEn);
+                                            });
+                                            return (
+                                                <>
+                                                    {sorted.map((g, idx) => {
+                                                        const isDone = g.estado === "COMPLETADA";
+                                                        const isBlocked = g.estado === "BLOQUEADA";
+                                                        const isPending = g.estado === "PENDIENTE" || g.estado === "EN_PROGRESO";
+                                                        
+                                                        const tone = isDone ? "green" : isBlocked ? "red" : isPending ? "amber" : "gray";
+                                                        const icon = { 
+                                                            INSPECCION: "hail", 
+                                                            PRESUPUESTO: "request_quote", 
+                                                            DESPACHO_ANTECEDENTES_LIQUIDADOR: "send", 
+                                                            RECEPCION_PROPUESTA: "fact_check", 
+                                                            INFORME_FINAL: "description",
+                                                            IMPUGNACION: "gavel",
+                                                            CIERRE: "task_alt",
+                                                            DESPACHO_BOLETA_INFORME_CLIENTE: "mark_email_read"
+                                                        }[g.tipo] || "assignment";
 
-                                                    return (
-                                                        <React.Fragment key={g.id}>
-                                                            <tr 
-                                                                className={cls(
-                                                                    "transition-colors hover:bg-surface-container-low/40 cursor-pointer group",
-                                                                    isExpanded || editing ? "bg-primary/5" : ""
-                                                                )}
-                                                                onClick={() => {
-                                                                    if (editing) return;
-                                                                    setExpandedGestion(isExpanded ? null : g.id);
-                                                                }}
-                                                            >
-                                                                <td className="px-6 py-4">
-                                                                    <div className="flex items-center gap-3">
-                                                                        <div className={cls(
-                                                                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors shadow-inner",
-                                                                            g.estado === "COMPLETADA" ? "bg-tertiary/10 text-tertiary" : "bg-surface-container-high text-on-surface-variant/40"
-                                                                        )}>
-                                                                            <span className="material-symbols-outlined text-lg">{icon}</span>
+                                                        return (
+                                                            <div key={g.id} className="relative group">
+                                                                {/* Conector Circular */}
+                                                                <div className={cls(
+                                                                    "absolute -left-[51px] top-4 h-6 w-6 rounded-full border-4 border-surface shadow-md transition-all duration-500 z-10",
+                                                                    isDone ? "bg-tertiary scale-110" : isBlocked ? "bg-error" : isPending ? "bg-amber-400 animate-pulse" : "bg-outline-variant"
+                                                                )}>
+                                                                    {isDone && <span className="material-symbols-outlined text-[12px] text-on-tertiary absolute inset-0 flex items-center justify-center font-black">check</span>}
+                                                                </div>
+
+                                                                {/* Card de Gestión */}
+                                                                <div 
+                                                                    onClick={() => {
+                                                                        if (isPending && !isBlocked) openCompletarGestion(g);
+                                                                    }}
+                                                                    className={cls(
+                                                                        "rounded-[2.5rem] border p-8 shadow-sm transition-all duration-500 cursor-pointer",
+                                                                        isDone 
+                                                                            ? "border-tertiary/10 bg-surface-container-low/40 hover:shadow-xl hover:shadow-tertiary/5" 
+                                                                            : isPending && !isBlocked
+                                                                                ? "border-primary/20 bg-surface shadow-lg hover:shadow-primary/10 hover:-translate-y-1"
+                                                                                : "border-outline-variant/10 bg-surface-container-lowest/50 opacity-60"
+                                                                    )}
+                                                                >
+                                                                    <div className="flex flex-col gap-6 sm:flex-row sm:items-start justify-between">
+                                                                        <div className="space-y-3">
+                                                                            <div className="flex items-center gap-3">
+                                                                                <div className={cls(
+                                                                                    "flex h-10 w-10 items-center justify-center rounded-2xl shadow-inner",
+                                                                                    isDone ? "bg-tertiary/10 text-tertiary" : "bg-primary/5 text-primary"
+                                                                                )}>
+                                                                                    <span className="material-symbols-outlined text-xl">{icon}</span>
+                                                                                </div>
+                                                                                <div>
+                                                                                    <h5 className="text-lg font-black text-on-surface uppercase tracking-tight">
+                                                                                        {TipoGestionLabel[g.tipo] || g.tipo}
+                                                                                    </h5>
+                                                                                    {isDone && g.fechaTermino && (
+                                                                                        <p className="text-[10px] font-black text-on-surface-variant/40 uppercase tracking-widest mt-0.5">
+                                                                                            {fmt(g.fechaTermino)} — Completado
+                                                                                        </p>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+
+                                                                            <div className="pl-1 space-y-2">
+                                                                                <p className={cls(
+                                                                                    "text-sm font-medium leading-relaxed",
+                                                                                    isDone ? "text-on-surface-variant/70" : "text-on-surface/80"
+                                                                                )}>
+                                                                                    {g.observaciones || `Pendiente de ejecución para el avance del caso siniestro.`}
+                                                                                </p>
+                                                                                {isBlocked && (
+                                                                                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-error/10 text-error text-[11px] font-black uppercase">
+                                                                                        <span className="material-symbols-outlined text-[14px]">lock</span>
+                                                                                        Gestión Bloqueada (Hito previo pendiente)
+                                                                                    </div>
+                                                                                )}
+                                                                                {g.tipo === "IMPUGNACION" && isPending && (
+                                                                                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-amber-500/10 text-amber-600 text-[11px] font-black uppercase">
+                                                                                        <span className="material-symbols-outlined text-[14px]">timer</span>
+                                                                                        Bloqueo automático al día 6 de recepción
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
                                                                         </div>
-                                                                        <div className="space-y-0.5 max-w-[300px]">
-                                                                            <p className="text-sm font-black tracking-tight text-on-surface truncate">
-                                                                                {TipoGestionLabel[g.tipo] || g.tipo}
-                                                                            </p>
-                                                                            {g.titulo && g.titulo !== TipoGestionLabel[g.tipo] && (
-                                                                                <p className="text-[10px] font-bold text-on-surface-variant/60 truncate">{g.titulo}</p>
+
+                                                                        <div className="flex flex-col items-end gap-3 shrink-0">
+                                                                            <Pill tone={tone} className="px-4 py-1.5 text-[11px]">{EstadoGestionLabel[g.estado]}</Pill>
+                                                                            
+                                                                            {isDone && g.documentoRelacionado && (
+                                                                                <a 
+                                                                                    href={fileUrl(g.documentoRelacionado.urlArchivo)} 
+                                                                                    target="_blank" 
+                                                                                    rel="noreferrer"
+                                                                                    onClick={e => e.stopPropagation()}
+                                                                                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container-high border border-outline-variant/10 text-[11px] font-black text-primary hover:bg-primary hover:text-on-primary transition-all shadow-sm"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-sm">attach_file</span>
+                                                                                    VER DOCUMENTO
+                                                                                </a>
+                                                                            )}
+
+                                                                            {isPending && !isBlocked && (
+                                                                                <Button 
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        openCompletarGestion(g);
+                                                                                    }}
+                                                                                    className="h-11 px-6 text-xs shadow-lg shadow-primary/20"
+                                                                                >
+                                                                                    Cargar y Finalizar
+                                                                                </Button>
                                                                             )}
                                                                         </div>
                                                                     </div>
-                                                                </td>
-                                                                <td className="px-6 py-4">
-                                                                    <Pill tone={tone} className="text-[10px]">{EstadoGestionLabel[g.estado]}</Pill>
-                                                                </td>
-                                                                <td className="px-6 py-4 text-[11px] font-bold font-mono tracking-tight">
-                                                                    {fmtDate(g.fechaProgramada) || "—"}
-                                                                </td>
-                                                                <td className="px-6 py-4 text-[11px] font-bold font-mono tracking-tight">
-                                                                    {g.fechaTermino ? fmtDate(g.fechaTermino) : "—"}
-                                                                </td>
-                                                                <td className="px-6 py-4">
-                                                                    <div className="flex items-center justify-center gap-2" onClick={e => e.stopPropagation()}>
-                                                                        {!editing && (
-                                                                            <button
-                                                                                onClick={() => openEditGestion(g)}
-                                                                                title="Editar gestión"
-                                                                                className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/20 bg-primary/5 text-primary transition hover:bg-primary/15"
+
+                                                                    {/* Lógica Específica por Tipo de Gestión (si está pendiente) */}
+                                                                    {isPending && !isBlocked && g.tipo === "PRESUPUESTO" && (
+                                                                        <div className="mt-6 pt-6 border-t border-outline-variant/10 flex flex-wrap gap-3">
+                                                                            <Button 
+                                                                                variant="secondary" 
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setEmailForm(p => ({
+                                                                                        ...p,
+                                                                                        asunto: `Presupuesto Disponible - Siniestro SIN-${String(selected.folio).padStart(6, "0")}`,
+                                                                                        mensaje: `Estimado Asesor,\n\nSe ha cargado el presupuesto para el siniestro del cliente ${selected.nombreCliente}. Por favor, revisar en plataforma.\n\nSaludos.`
+                                                                                    }));
+                                                                                    setOpenEmail(true);
+                                                                                }}
+                                                                                className="h-9 px-4 text-[10px]"
                                                                             >
-                                                                                <span className="material-symbols-outlined text-sm">edit</span>
-                                                                            </button>
-                                                                        )}
-                                                                        <Button
-                                                                            onClick={() => openCompletarGestion(g)}
-                                                                            disabled={busy || g.estado === "COMPLETADA" || g.estado === "BLOQUEADA" || editing}
-                                                                            className="h-8 px-3 text-[10px]"
-                                                                        >
-                                                                            Hacer Gestión
-                                                                        </Button>
-                                                                        <button onClick={() => {
-                                                                            if (editing) return;
-                                                                            setExpandedGestion(isExpanded ? null : g.id);
-                                                                        }} className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant/50 hover:bg-surface-container-high transition">
-                                                                            <span className="material-symbols-outlined text-sm transition-transform duration-300" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                                                                                expand_more
-                                                                            </span>
-                                                                        </button>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-
-                                                            {/* Fila expandida de detalles / edición */}
-                                                            {(isExpanded || editing) && (
-                                                                <tr className={cls("border-b border-outline-variant/10", isExpanded || editing ? "bg-primary/5" : "")}>
-                                                                    <td colSpan={5} className="p-0">
-                                                                        <div className="px-8 pb-6 pt-2 animate-in slide-in-from-top-2 fade-in duration-300">
-                                                                            {editing ? (
-                                                                                <div className="rounded-2xl border border-primary/15 bg-surface p-5 shadow-sm space-y-4 max-w-4xl">
-                                                                                    <h5 className="text-xs font-black uppercase tracking-widest text-primary/60 mb-2">Editando Gestión</h5>
-                                                                                    <div className="grid grid-cols-2 gap-4">
-                                                                                        <Input label="Título / Nota interna" value={ef.titulo} onChange={v => setEditGestion(p => ({ ...p, [g.id]: { ...p[g.id], titulo: v } }))} />
-                                                                                        <Input label="Fecha Programada" type="date" value={ef.fechaProgramada} onChange={v => setEditGestion(p => ({ ...p, [g.id]: { ...p[g.id], fechaProgramada: v } }))} />
-                                                                                    </div>
-                                                                                    <Textarea label="Observaciones" value={ef.observaciones} onChange={v => setEditGestion(p => ({ ...p, [g.id]: { ...p[g.id], observaciones: v } }))} />
-                                                                                    
-                                                                                    <div className="space-y-1.5">
-                                                                                        <span className="text-[11px] font-black uppercase tracking-wider text-on-surface-variant/60">
-                                                                                            {g.documentoRelacionado ? "Reemplazar documento" : "Adjuntar documento (opcional)"}
-                                                                                        </span>
-                                                                                        {g.documentoRelacionado && !ef.file && (
-                                                                                            <div className="flex items-center gap-3 rounded-xl border border-primary/10 bg-primary/5 px-4 py-2.5">
-                                                                                                <span className="material-symbols-outlined text-primary text-lg">draft</span>
-                                                                                                <span className="flex-1 text-xs font-bold text-on-surface/70 truncate">{g.documentoRelacionado.titulo || "Documento actual"}</span>
-                                                                                            </div>
-                                                                                        )}
-                                                                                        <label className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-4 cursor-pointer transition ${
-                                                                                            ef.file ? "border-primary/50 bg-primary/5" : "border-outline-variant/30 hover:border-primary/30 hover:bg-primary/5"
-                                                                                        }`}>
-                                                                                            <input type="file" accept="application/pdf,.xlsx,.xls,.doc,.docx,image/*" className="hidden" onChange={e => {
-                                                                                                const file = e.target.files?.[0] || null;
-                                                                                                setEditGestion(p => ({ ...p, [g.id]: { ...p[g.id], file } }));
-                                                                                            }} />
-                                                                                            {ef.file ? (
-                                                                                                <div className="flex items-center gap-2 text-primary text-xs font-black"><span className="material-symbols-outlined text-base">check_circle</span>{ef.file.name}</div>
-                                                                                            ) : (
-                                                                                                <div className="flex items-center gap-2 text-on-surface-variant/40"><span className="material-symbols-outlined text-xl">upload_file</span><span className="text-[11px] font-black uppercase tracking-wider">{g.documentoRelacionado ? "Clic para reemplazar" : "Clic para agregar"}</span></div>
-                                                                                            )}
-                                                                                        </label>
-                                                                                        {ef.file && (
-                                                                                            <button onClick={() => setEditGestion(p => ({ ...p, [g.id]: { ...p[g.id], file: null } }))} className="text-[10px] font-black text-error/60 xl mt-1 transition uppercase tracking-wider hover:text-error">✕ Quitar archivo</button>
-                                                                                        )}
-                                                                                    </div>
-
-                                                                                    <div className="flex justify-end gap-3 pt-2">
-                                                                                        <Button variant="secondary" onClick={() => closeEditGestion(g.id)} disabled={busy} className="h-9 px-4 text-xs">Cancelar</Button>
-                                                                                        <Button onClick={() => saveGestion(g.id)} disabled={busy} className="h-9 px-5 text-xs"><span className="material-symbols-outlined text-sm">save</span>{busy ? "Guardando..." : "Guardar"}</Button>
-                                                                                    </div>
-                                                                                </div>
-                                                                            ) : (
-                                                                                <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low/30 p-5 shadow-inner max-w-4xl">
-                                                                                    <div className="grid gap-4 md:grid-cols-2">
-                                                                                        <div className="flex flex-col gap-1">
-                                                                                            <span className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant/40">Iniciado En</span>
-                                                                                            <span className="text-xs font-bold text-on-surface">{fmt(g.creadoEn)}</span>
-                                                                                        </div>
-                                                                                        <div className="flex flex-col gap-1">
-                                                                                            <span className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant/40">Observaciones</span>
-                                                                                            <span className="text-xs font-bold text-on-surface-variant/80 italic">{g.observaciones || "Sin observaciones registradas."}</span>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
-                                                                            )}
+                                                                                <span className="material-symbols-outlined text-sm">alternate_email</span>
+                                                                                Avisar al Asesor
+                                                                            </Button>
                                                                         </div>
-                                                                    </td>
-                                                                </tr>
-                                                            )}
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                                                    )}
 
-                                    <div className="rounded-3xl border border-outline-variant/10 bg-surface-container-high/10 p-6 backdrop-blur-sm">
-                                        <div className="mb-6 flex items-center gap-3">
-                                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                                                <span className="material-symbols-outlined text-xl">add_circle</span>
-                                            </div>
-                                            <h4 className="text-base font-black tracking-tight text-on-surface uppercase">Nueva Gestión Especial</h4>
-                                        </div>
-                                        <div className="grid gap-4 lg:grid-cols-12 items-end">
-                                            <div className="lg:col-span-4">
-                                                <Input label="Título" value={newGestion.titulo} onChange={(v) => setNewGestion((p) => ({ ...p, titulo: v }))} placeholder="Ej: Visita adicional..." />
-                                            </div>
-                                            <div className="lg:col-span-6">
-                                                <Input label="Notas" value={newGestion.observaciones} onChange={(v) => setNewGestion((p) => ({ ...p, observaciones: v }))} placeholder="Detalles de la gestión..." />
-                                            </div>
-                                            <div className="lg:col-span-2">
-                                                <Button onClick={crearGestionPers} disabled={busy || !newGestion.titulo} className="w-full h-[52px]">Programar</Button>
-                                            </div>
-                                        </div>
+                                                                    {isPending && !isBlocked && g.tipo === "DESPACHO_ANTECEDENTES_LIQUIDADOR" && (
+                                                                        <div className="mt-6 pt-6 border-t border-outline-variant/10 flex flex-wrap gap-3">
+                                                                            <Button 
+                                                                                variant="secondary" 
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setEmailForm(p => ({
+                                                                                        ...p,
+                                                                                        destinatarios: selected.emailLiquidador || "",
+                                                                                        asunto: `Antecedentes Liquidación - Siniestro SIN-${String(selected.folio).padStart(6, "0")}`,
+                                                                                        mensaje: `Estimado ${selected.nombreLiquidador || "Liquidador"},\n\nAdjunto enviamos antecedentes para el proceso de liquidación del siniestro folio ${selected.folio}.\n\nQuedamos a su disposición.`
+                                                                                    }));
+                                                                                    setOpenEmail(true);
+                                                                                }}
+                                                                                className="h-9 px-4 text-[10px]"
+                                                                            >
+                                                                                <span className="material-symbols-outlined text-sm">forward_to_inbox</span>
+                                                                                Despachar Antecedentes
+                                                                            </Button>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+
+                                                    {/* Botón para Nueva Gestión */}
+                                                    <div className="relative group pt-4">
+                                                        <div className="absolute -left-[51px] top-6 h-6 w-6 rounded-full border-4 border-surface shadow-md bg-surface-container-high z-10 flex items-center justify-center">
+                                                            <span className="material-symbols-outlined text-[14px] text-on-surface-variant">add</span>
+                                                        </div>
+                                                        <div className="rounded-[2.5rem] border-2 border-dashed border-outline-variant/20 bg-surface-container-low/20 p-8 flex flex-col items-center justify-center gap-4 transition hover:border-primary/40 hover:bg-primary/5">
+                                                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-container-high text-on-surface-variant">
+                                                                <span className="material-symbols-outlined text-2xl">more_time</span>
+                                                            </div>
+                                                            <div className="text-center">
+                                                                <h5 className="text-sm font-black text-on-surface uppercase tracking-widest">Nueva Gestión Personalizada</h5>
+                                                                <p className="text-xs font-medium text-on-surface-variant/60 mt-1">¿Necesitas agregar un paso extra en este caso?</p>
+                                                            </div>
+                                                            <div className="grid gap-4 w-full max-w-2xl mt-4 sm:grid-cols-12 items-end">
+                                                                <div className="sm:col-span-4">
+                                                                    <Input label="Título" value={newGestion.titulo} onChange={(v) => setNewGestion((p) => ({ ...p, titulo: v }))} placeholder="Ej: Visita adicional..." />
+                                                                </div>
+                                                                <div className="sm:col-span-6">
+                                                                    <Input label="Notas" value={newGestion.observaciones} onChange={(v) => setNewGestion((p) => ({ ...p, observaciones: v }))} placeholder="Detalles de la gestión..." />
+                                                                </div>
+                                                                <div className="sm:col-span-2">
+                                                                    <Button onClick={crearGestionPers} disabled={busy || !newGestion.titulo} className="w-full h-[52px]">Programar</Button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 </Section>
                             )}
@@ -1755,7 +1926,6 @@ export default function SiniestroDetailPage() {
                                                                                 <button onClick={() => setEditPago(prev => ({...prev, [p.id]: {...prev[p.id], file: null}}))} className="text-[10px] font-black text-error/60 mt-1 uppercase tracking-wider hover:text-error">✕ Quitar selección</button>
                                                                             )}
                                                                         </div>
-
                                                                         <Input label="Notas" value={ep.notas} onChange={v => setEditPago(prev => ({...prev, [p.id]: {...prev[p.id], notas: v}}))} />
                                                                         
                                                                         <div className="flex justify-end gap-2">
@@ -1942,7 +2112,39 @@ export default function SiniestroDetailPage() {
                     <div className="space-y-6">
                         <Select label="Documento a Adjuntar" value={completeModal.tipoDoc} onChange={v => setCompleteModal(p => ({ ...p, tipoDoc: v }))} options={Object.keys(TipoDocumentoLabel).map(k => ({ value: k, label: TipoDocumentoLabel[k] }))} />
                         <Input label="Nombre del Archivo" value={completeModal.tituloDoc} onChange={v => setCompleteModal(p => ({ ...p, tituloDoc: v }))} />
+                        {completeModal.gestion?.tipo === "PRESUPUESTO" && (
+                            <div className="mt-4 p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20">
+                                <Input 
+                                    label="Monto del Presupuesto ($)" 
+                                    type="number"
+                                    placeholder="Ej: 1250000"
+                                    value={completeModal.montoPresupuesto}
+                                    onChange={v => setCompleteModal(p => ({ ...p, montoPresupuesto: v }))}
+                                />
+                                <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-2 px-1">
+                                    * Se enviará correo automático al asesor con este monto.
+                                </p>
+                            </div>
+                        )}
                         {completeModal.gestion?.tipo === "INSPECCION" && <Input label="Fecha Real Inspección" type="date" value={completeModal.fechaRecepcion} onChange={v => setCompleteModal(p => ({ ...p, fechaRecepcion: v }))} />}
+                        {completeModal.gestion?.tipo === "RECEPCION_PROPUESTA" && (
+                            <div className="flex items-center gap-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
+                                <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se acepta la propuesta?</span>
+                                <div className="flex gap-2">
+                                    <button onClick={() => setCompleteModal(p => ({ ...p, aceptado: true }))} className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.aceptado ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}>Si, Aceptar</button>
+                                    <button onClick={() => setCompleteModal(p => ({ ...p, aceptado: false }))} className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.aceptado ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}>No, Rechazar</button>
+                                </div>
+                            </div>
+                        )}
+                        {completeModal.gestion?.tipo === "INFORME_FINAL" && (
+                            <div className="flex items-center gap-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
+                                <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se impugna el informe?</span>
+                                <div className="flex gap-2">
+                                    <button onClick={() => setCompleteModal(p => ({ ...p, impugnado: true }))} className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.impugnado ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}>Si, Impugnar</button>
+                                    <button onClick={() => setCompleteModal(p => ({ ...p, impugnado: false }))} className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.impugnado ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}>No Impugnar</button>
+                                </div>
+                            </div>
+                        )}
                         <Textarea label="Observaciones Finales" value={completeModal.observaciones} onChange={v => setCompleteModal(p => ({ ...p, observaciones: v }))} />
                         <div className="relative rounded-2xl border-2 border-dashed border-outline-variant/30 p-8 flex flex-col items-center justify-center hover:bg-primary/5 transition-colors cursor-pointer">
                             <input type="file" onChange={e => setCompleteModal(p => ({ ...p, file: e.target.files[0] }))} className="absolute inset-0 opacity-0 cursor-pointer" />
@@ -2091,6 +2293,67 @@ export default function SiniestroDetailPage() {
                     </div>
                 </Modal>
             )}
+
+            {/* Modal Desistimiento */}
+            <Modal
+                open={openDesistir}
+                onClose={() => setOpenDesistir(false)}
+                title="Desistir Caso"
+                desc="Esta acción marcará el caso como desistido y detendrá el flujo."
+            >
+                <div className="space-y-6 pt-4">
+                    <Textarea 
+                        label="Observaciones Internas" 
+                        placeholder="Explica el motivo del desistimiento..."
+                        value={desistirForm.observaciones}
+                        onChange={v => setDesistirForm(p => ({ ...p, observaciones: v }))}
+                    />
+                    
+                    <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-4 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Notificar al Liquidador?</span>
+                            <Switch 
+                                checked={desistirForm.enviarEmail} 
+                                onChange={v => setDesistirForm(p => ({ ...p, enviarEmail: v }))} 
+                            />
+                        </div>
+                        
+                        {desistirForm.enviarEmail && (
+                            <div className="space-y-3 pt-2">
+                                <Input 
+                                    label="Email Liquidador" 
+                                    value={desistirForm.emailLiquidador}
+                                    onChange={v => setDesistirForm(p => ({ ...p, emailLiquidador: v }))}
+                                />
+                                <Input 
+                                    label="Asunto" 
+                                    value={desistirForm.asunto}
+                                    onChange={v => setDesistirForm(p => ({ ...p, asunto: v }))}
+                                />
+                                <Textarea 
+                                    label="Mensaje" 
+                                    value={desistirForm.mensaje}
+                                    onChange={v => setDesistirForm(p => ({ ...p, mensaje: v }))}
+                                    rows={5}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-2">
+                        <Button variant="secondary" onClick={() => setOpenDesistir(false)} disabled={busy}>
+                            Cancelar
+                        </Button>
+                        <Button 
+                            onClick={desistir} 
+                            disabled={busy || !desistirForm.observaciones}
+                            className="bg-error text-on-error hover:bg-error/90 px-8"
+                        >
+                            {busy ? "Procesando..." : "Confirmar Desistimiento"}
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 }

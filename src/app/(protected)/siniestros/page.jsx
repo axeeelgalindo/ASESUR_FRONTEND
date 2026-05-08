@@ -31,6 +31,7 @@ const EstadoSiniestroLabel = {
   INFORME_FINAL: "Liquidación - Informe final",
   COBRANZA: "Cobranza",
   FACTURACION: "Facturación",
+  DESISTIMIENTO: "Desistido",
 };
 
 import { Pill } from "@/components/ui/Pill";
@@ -267,13 +268,14 @@ export default function SiniestrosPage() {
               onChange={setEstadoFilter}
               options={[
                 { value: "ALL", label: "Todos" },
-                { value: "INSPECCION", label: "Inspección" },
-                { value: "PRESUPUESTO", label: "Presupuesto" },
-                { value: "ENVIO_INFORMACION", label: "Envío Información" },
-                { value: "RECEPCION_PROPUESTA", label: "Propuesta Liquidador" },
-                { value: "APROBADA", label: "Aprobada" },
+                { value: "INSPECCION", label: "Liq. - Inspección" },
+                { value: "PRESUPUESTO", label: "Liq. - Presupuesto" },
+                { value: "ENVIO_INFORMACION", label: "Liq. - Envío Info" },
+                { value: "RECEPCION_PROPUESTA", label: "Propuesta Liq." },
+                { value: "INFORME_FINAL", label: "Liq. - Informe Final" },
                 { value: "COBRANZA", label: "Cobranza" },
                 { value: "FACTURACION", label: "Facturación" },
+                { value: "DESISTIMIENTO", label: "Desistido" },
                 { value: "CERRADO", label: "Cerrado" },
               ]}
             />
