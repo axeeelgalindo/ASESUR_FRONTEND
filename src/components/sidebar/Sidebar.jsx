@@ -117,9 +117,23 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }) {
         )}
       </nav>
 
+      {/* QR Code */}
+      {!isCollapsed && (
+        <div className="mb-4 flex justify-center px-4 mt-4">
+          <div className="bg-transparent p-2 rounded-xl shadow-sm">
+            <img
+              src="/qr.png"
+              alt="QR Code"
+              className="w-full max-w-[140px] h-auto object-contain rounded-md"
+            />
+            <p className="text-center text-[10px] text-on-surface-variant mt-2 font-medium">Escanear para App</p>
+          </div>
+        </div>
+      )}
+
       {/* User card (Variation 1: Minimalist Template) */}
       <div className="mt-auto px-2 pb-4">
-        <div className={`bg-surface-container-high p-4 rounded-xl transition-all duration-300 ${isCollapsed ? "flex flex-col items-center gap-4" : "flex items-center justify-between group"}`}>
+        <div className={`bg-surface-container-high p-4 rounded-xl transition-all duration-300 ${isCollapsed ? "flex flex-col items-center gap-4 mt-auto" : "flex items-center justify-between group"}`}>
           <div className={`flex items-center gap-4 ${isCollapsed ? "flex-col" : ""}`}>
             <div className="relative w-12 h-12 rounded-lg flex-shrink-0 bg-primary-container text-primary flex items-center justify-center font-bold text-lg overflow-hidden border border-outline-variant/10 shadow-inner">
               {initials}
