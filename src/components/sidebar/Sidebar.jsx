@@ -119,14 +119,14 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }) {
 
       {/* QR Code */}
       {!isCollapsed && (
-        <div className="mb-4 flex justify-center px-4 mt-4">
+        <div className="mb-4 flex justify-center items-center px-4 mt-4">
           <div className="bg-transparent p-2 rounded-xl shadow-sm">
             <img
               src="/qr.png"
               alt="QR Code"
-              className="w-full max-w-[140px] h-auto object-contain rounded-md"
+              className="w-full max-w-[140px] m-auto h-auto object-contain rounded-md"
             />
-            <p className="text-center text-[10px] text-on-surface-variant mt-2 font-medium">Escanear para App</p>
+            <p className="text-center text-[10px] text-on-surface-variant mt-2 font-medium">¡Descarga Expo GO y escanea para la app!</p>
           </div>
         </div>
       )}
