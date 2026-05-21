@@ -59,6 +59,7 @@ export default function CaptacionesPage() {
 
   const [openDetail, setOpenDetail] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
   // Asignación de asesor (operaciones)
   const [asesores, setAsesores] = useState([]);
@@ -70,6 +71,7 @@ export default function CaptacionesPage() {
     rutCliente: "",
     direccion: "",
     comuna: "",
+    region: "",
     ciudad: "",
     numeroDocumentoCI: "",
     firmaNotarial: "",
@@ -85,6 +87,7 @@ export default function CaptacionesPage() {
       rutCliente: selected.rutCliente || "",
       direccion: selected.direccion || "",
       comuna: selected.comuna || "",
+      region: selected.region || selected.ciudad || "",
       ciudad: selected.ciudad || "",
       numeroDocumentoCI: selected.numeroDocumentoCI || "",
       firmaNotarial: selected.firmaNotarial || "",
@@ -168,6 +171,7 @@ export default function CaptacionesPage() {
   const openCaso = async (c) => {
     setError(null);
     setBusy(true);
+    setCurrentPhotoIndex(0);
     try {
       const full = await apiGet(`/captaciones/${c.id}`);
       setSelected(full);
@@ -333,8 +337,8 @@ export default function CaptacionesPage() {
                     <span className="text-[10px] font-bold tracking-widest text-on-surface-variant uppercase">
                       SIN-{String(c.folio).padStart(6, "0")}
                     </span>
-                    <Pill tone={isAsignado ? "green" : "amber"}>
-                      {isAsignado ? "Asignado" : "Pendiente"}
+                    <Pill tone={isAsignado ? "green" : c.estado === "PENDIENTE_AUTORIZACION" ? "blue" : "amber"}>
+                      {isAsignado ? "Asignado" : c.estado === "PENDIENTE_AUTORIZACION" ? "Espera VB" : "Pendiente"}
                     </Pill>
                   </div>
                   <h3 className="font-headline font-bold text-lg text-on-surface mb-1 truncate">
@@ -348,6 +352,10 @@ export default function CaptacionesPage() {
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-on-surface-variant uppercase font-bold tracking-tighter opacity-70">Dirección</span>
                       <span className="text-on-surface font-semibold truncate max-w-[140px]">{c.direccion || "—"}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-on-surface-variant uppercase font-bold tracking-tighter opacity-70">Captador</span>
+                      <span className="text-on-surface font-semibold truncate max-w-[140px]">{c.captadoPor?.nombre || c.captadoPor?.email || "—"}</span>
                     </div>
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-on-surface-variant uppercase font-bold tracking-tighter opacity-70">Actualización</span>
@@ -379,6 +387,7 @@ export default function CaptacionesPage() {
                 <th className="px-8 py-5">Folio</th>
                 <th className="px-8 py-5">Cliente</th>
                 <th className="px-8 py-5">Ramo</th>
+                <th className="px-8 py-5">Captador</th>
                 <th className="px-8 py-5">Estado</th>
                 <th className="px-8 py-5">Actualizado</th>
                 <th className="px-8 py-5"></th>
@@ -392,8 +401,8 @@ export default function CaptacionesPage() {
                     key={c.id}
                     onClick={() => openCaso(c)}
                     className={cls(
-                      "hover:bg-surface-container/50 transition-colors cursor-pointer group",
-                      c.esCasoAsesur ? "border-l-4 border-l-primary bg-primary/[0.01]" : "border-l-4 border-l-amber-500 bg-amber-500/[0.01]"
+                       "hover:bg-surface-container/50 transition-colors cursor-pointer group",
+                       c.esCasoAsesur ? "border-l-4 border-l-primary bg-primary/[0.01]" : "border-l-4 border-l-amber-500 bg-amber-500/[0.01]"
                     )}
                   >
                     <td className="px-8 py-5 font-bold text-on-surface">
@@ -406,9 +415,12 @@ export default function CaptacionesPage() {
                     <td className="px-8 py-5 text-xs text-on-surface font-medium">
                       {TipoCasoLabel[c.tipo] || c.tipo}
                     </td>
+                    <td className="px-8 py-5 text-xs text-on-surface font-medium">
+                      {c.captadoPor?.nombre || c.captadoPor?.email || "—"}
+                    </td>
                     <td className="px-8 py-5">
-                      <Pill tone={isAsignado ? "green" : "amber"}>
-                        {isAsignado ? "Asignado" : "Pendiente"}
+                      <Pill tone={isAsignado ? "green" : c.estado === "PENDIENTE_AUTORIZACION" ? "blue" : "amber"}>
+                        {isAsignado ? "Asignado" : c.estado === "PENDIENTE_AUTORIZACION" ? "Espera VB" : "Pendiente"}
                       </Pill>
                     </td>
                     <td className="px-8 py-5 text-xs text-on-surface-variant font-medium">
@@ -461,22 +473,23 @@ export default function CaptacionesPage() {
                     <p className="text-sm text-on-surface-variant">{selected.rutCliente}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Pill tone={!!selected.asesorId ? "green" : "amber"}>
-                      {!!selected.asesorId ? "Asignado" : "Sin Asignar"}
+                    <Pill tone={!!selected.asesorId ? "green" : selected.estado === "PENDIENTE_AUTORIZACION" ? "blue" : "amber"}>
+                      {!!selected.asesorId ? "Asignado" : selected.estado === "PENDIENTE_AUTORIZACION" ? "Espera VB" : "Pendiente"}
                     </Pill>
-                    {!selected.vbPreFecha && (
-                      <Pill tone="amber">VB PENDIENTE</Pill>
-                    )}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4 text-xs">
+                <div className="grid grid-cols-3 gap-4 text-xs">
                   <div className="space-y-1">
                     <p className="text-on-surface-variant font-bold uppercase tracking-tighter opacity-60">Dirección</p>
                     <p className="text-on-surface font-medium">{selected.direccion || "—"}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-on-surface-variant font-bold uppercase tracking-tighter opacity-60">Comuna/Ciudad</p>
-                    <p className="text-on-surface font-medium">{(selected.comuna || "") + (selected.ciudad ? `, ${selected.ciudad}` : "") || "—"}</p>
+                    <p className="text-on-surface-variant font-bold uppercase tracking-tighter opacity-60">Comuna/Región</p>
+                    <p className="text-on-surface font-medium">{(selected.comuna || "") + (selected.region || selected.ciudad ? `, ${selected.region || selected.ciudad}` : "") || "—"}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-on-surface-variant font-bold uppercase tracking-tighter opacity-60">Captador</p>
+                    <p className="text-on-surface font-medium">{selected.captadoPor?.nombre || selected.captadoPor?.email || "—"}</p>
                   </div>
                 </div>
               </section>
@@ -485,48 +498,95 @@ export default function CaptacionesPage() {
               {canAssignAsesor && (
                 <section className="space-y-4">
                   <h4 className="font-headline font-bold text-sm uppercase tracking-widest text-secondary">Validación y Asignación de Asesor</h4>
-                  <p className="text-[11px] text-on-surface-variant/70 font-medium">
-                    Al asignar un asesor, se otorgará automáticamente el Visto Bueno (VB) y el caso se escalará a la etapa de <span className="font-bold text-secondary">PRE-SINIESTRO</span>.
-                  </p>
-                  <div className="flex gap-4">
-                    <select
-                      value={asesorPick}
-                      onChange={(e) => setAsesorPick(e.target.value)}
-                      className="flex-1 bg-surface-container-low text-on-surface text-sm font-semibold p-3 rounded-xl border border-outline-variant/10 outline-none focus:ring-1 focus:ring-primary"
-                    >
-                      <option value="">Seleccionar asesor...</option>
-                      {asesores.map(u => (
-                        <option key={u.id} value={u.id}>{u.nombre || u.email}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={saveAsignacion}
-                      disabled={busy || !asesorPick}
-                      className="bg-secondary text-on-secondary font-bold px-6 py-3 rounded-xl disabled:opacity-50 transition-all active:scale-95 flex items-center gap-2"
-                    >
-                      <span className="material-symbols-outlined text-lg">fact_check</span>
-                      Dar VB y Escalar
-                    </button>
-                  </div>
+                  
+                  {selected.estado !== "PENDIENTE_AUTORIZACION" && !selected.asesorId ? (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800 text-sm flex items-center gap-3">
+                       <span className="material-symbols-outlined">warning</span>
+                       <p className="font-medium">La captación aún no está lista para VB. El captador debe finalizarla.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-[11px] text-on-surface-variant/70 font-medium">
+                        Al asignar un asesor, se otorgará automáticamente el Visto Bueno (VB) y el caso se escalará a la etapa de <span className="font-bold text-secondary">PRE-SINIESTRO</span>.
+                      </p>
+                      <div className="flex gap-4">
+                        <select
+                          value={asesorPick}
+                          onChange={(e) => setAsesorPick(e.target.value)}
+                          className="flex-1 bg-surface-container-low text-on-surface text-sm font-semibold p-3 rounded-xl border border-outline-variant/10 outline-none focus:ring-1 focus:ring-primary"
+                        >
+                          <option value="">Seleccionar asesor...</option>
+                          {asesores.map(u => (
+                            <option key={u.id} value={u.id}>{u.nombre || u.email}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={saveAsignacion}
+                          disabled={busy || !asesorPick}
+                          className="bg-secondary text-on-secondary font-bold px-6 py-3 rounded-xl disabled:opacity-50 transition-all active:scale-95 flex items-center gap-2"
+                        >
+                          <span className="material-symbols-outlined text-lg">fact_check</span>
+                          Dar VB y Escalar
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </section>
               )}
 
               {/* Fotos */}
               <section className="space-y-4">
                 <h4 className="font-headline font-bold text-sm uppercase tracking-widest text-primary">Fotografías ({selected.fotos?.length || 0})</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  {(selected.fotos || []).map(f => (
-                    <div key={f.id} className="group relative aspect-video bg-surface-container-highest rounded-xl overflow-hidden border border-outline-variant/10">
-                      {f.urlArchivo && (
-                        <img src={fileUrl(f.urlArchivo)} alt={f.titulo} className="w-full h-full object-cover transition-transform group-hover:scale-110" />
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent p-4 flex flex-col justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                        <p className="text-white text-[10px] font-bold uppercase tracking-widest">{f.parteCasa || "General"}</p>
-                        <p className="text-white/70 text-[10px] truncate">{f.titulo || "Sin título"}</p>
-                      </div>
+                {selected.fotos?.length > 0 ? (
+                  <div className="flex flex-col gap-3">
+                    <div className="relative aspect-[4/3] bg-surface-container-highest rounded-2xl overflow-hidden border border-outline-variant/10 flex items-center justify-center">
+                       <img src={fileUrl(selected.fotos[currentPhotoIndex]?.urlArchivo)} className="w-full h-full object-contain bg-black/5" />
+                       
+                       <button 
+                         onClick={() => setCurrentPhotoIndex(prev => prev > 0 ? prev - 1 : selected.fotos.length - 1)}
+                         className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-black/50 text-white rounded-full flex items-center justify-center hover:bg-black/70 transition-colors"
+                       >
+                         <span className="material-symbols-outlined">chevron_left</span>
+                       </button>
+
+                       <button 
+                         onClick={() => setCurrentPhotoIndex(prev => prev < selected.fotos.length - 1 ? prev + 1 : 0)}
+                         className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-black/50 text-white rounded-full flex items-center justify-center hover:bg-black/70 transition-colors"
+                       >
+                         <span className="material-symbols-outlined">chevron_right</span>
+                       </button>
+                       
+                       <div className="absolute top-4 right-4 bg-black/60 text-white text-[10px] font-bold px-3 py-1 rounded-full">
+                         {currentPhotoIndex + 1} / {selected.fotos.length}
+                       </div>
                     </div>
-                  ))}
-                </div>
+
+                    <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant/10">
+                       <p className="text-on-surface font-bold text-sm uppercase tracking-widest">{selected.fotos[currentPhotoIndex]?.parteCasa || "General"}</p>
+                       {selected.fotos[currentPhotoIndex]?.titulo ? (
+                         <p className="text-on-surface-variant text-sm mt-1">{selected.fotos[currentPhotoIndex].titulo}</p>
+                       ) : (
+                         <p className="text-on-surface-variant/50 text-sm mt-1 italic">Sin comentarios u observaciones.</p>
+                       )}
+                    </div>
+
+                    <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                      {selected.fotos.map((f, idx) => (
+                        <button
+                          key={f.id}
+                          onClick={() => setCurrentPhotoIndex(idx)}
+                          className={`flex-shrink-0 relative w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${idx === currentPhotoIndex ? 'border-primary shadow-md' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                        >
+                          <img src={fileUrl(f.urlArchivo)} className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 text-center">
+                    <p className="text-on-surface-variant text-sm">No hay fotografías disponibles.</p>
+                  </div>
+                )}
               </section>
 
               {/* Documentos */}
@@ -598,9 +658,9 @@ export default function CaptacionesPage() {
             onChange={(v) => setEditForm((p) => ({ ...p, comuna: v }))}
           />
           <Input
-            label="Ciudad"
-            value={editForm.ciudad}
-            onChange={(v) => setEditForm((p) => ({ ...p, ciudad: v }))}
+            label="Región"
+            value={editForm.region}
+            onChange={(v) => setEditForm((p) => ({ ...p, region: v }))}
           />
           <Input
             label="N° Documento C.I."

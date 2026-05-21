@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import api, { apiGet, apiPost, apiPostForm, apiPatch, apiPutForm, apiDel, fileUrl } from "@/lib/api";
+import api, { apiGet, apiPost, apiPostForm, apiPatch, apiPatchForm, apiPutForm, apiDel, fileUrl } from "@/lib/api";
 import comunasData from "@/lib/comunas.json";
 
 import { Pill } from "@/components/ui/Pill";
@@ -67,7 +67,11 @@ const EstadoSiniestroLabel = {
     INFORME_FINAL: "Liquidación - Informe final",
     COBRANZA: "Cobranza",
     FACTURACION: "Facturación",
+    DEMANDA: "Modo Demanda",
     DESISTIMIENTO: "Desistido",
+    EN_JUICIO: "En Juicio",
+    JUICIO_GANADO: "Juicio Ganado (Fin)",
+    JUICIO_PERDIDO: "Juicio Perdido (Fin)",
 };
 
 const TipoGestionLabel = {
@@ -161,8 +165,14 @@ export default function SiniestroDetailPage() {
         fechaRecepcion: "",
         observaciones: "",
         file: null,
+        files: [], // Para subida de múltiples archivos
         aceptado: true, // Para RECEPCION_PROPUESTA
         impugnado: false, // Para INFORME_FINAL
+        montoPresupuesto: "",
+        montoPropuesta: "",
+        montoIndemnizacion: "",
+        impugnacionAceptada: true, // Para INFORME_FINAL
+        abogadosAsignados: "", // Para INFORME_FINAL
     });
     const [factForm, setFactForm] = useState({
         estadoFacturacion: "PENDIENTE",
@@ -180,7 +190,7 @@ export default function SiniestroDetailPage() {
     });
     const [editPago, setEditPago] = useState({}); // { id: { ...data } }
     const [confirmPago, setConfirmPago] = useState({}); // { id: { fechaPago: string } | null }
-    const [emailForm, setEmailForm] = useState({ destinatarios: "", cc: "", asunto: "", mensaje: "" });
+    const [emailForm, setEmailForm] = useState({ destinatarios: "", cc: "", asunto: "", mensaje: "", files: [], adjuntosPath: [] });
     const [openEmail, setOpenEmail] = useState(false);
     const [openWordModal, setOpenWordModal] = useState(false);
     const [openBudgetModal, setOpenBudgetModal] = useState(false);
@@ -209,11 +219,37 @@ export default function SiniestroDetailPage() {
         direccion: "", region: "", comuna: "", ciudad: "",
         companiaSeguro: "", numeroSiniestro: "",
         nombreLiquidador: "", emailLiquidador: "", telefonoLiquidador: "",
-        nombreAnalista: "", estado: "",
+        nombreAnalista: "", estado: "", abogadosAsignados: "",
+        abogadosIds: [],
     });
+
+    const [allAbogados, setAllAbogados] = useState([]);
+    const [abogadoSearchModal, setAbogadoSearchModal] = useState("");
+    const [abogadoSearchEdit, setAbogadoSearchEdit] = useState("");
+    const [openJuicioModal, setOpenJuicioModal] = useState(false);
+
+    const loadAbogados = async () => {
+        try {
+            const data = await apiGet("/abogados");
+            setAllAbogados(data || []);
+        } catch (e) {
+            console.error("Error loading abogados:", e);
+        }
+    };
+
+    const filteredAbogadosModal = allAbogados.filter(a => 
+        a.nombre.toLowerCase().includes(abogadoSearchModal.toLowerCase()) &&
+        !(completeModal.abogadosIds || []).includes(a.id)
+    );
+
+    const filteredAbogadosEdit = allAbogados.filter(a => 
+        a.nombre.toLowerCase().includes(abogadoSearchEdit.toLowerCase()) &&
+        !(infoForm.abogadosIds || []).includes(a.id)
+    );
 
     useEffect(() => {
         loadCaso();
+        loadAbogados();
     }, [id]);
 
     useEffect(() => {
@@ -279,6 +315,8 @@ export default function SiniestroDetailPage() {
             telefonoLiquidador: full.telefonoLiquidador || "",
             nombreAnalista: full.nombreAnalista || "",
             estado: full.estado || "",
+            abogadosAsignados: full.abogadosAsignados || "",
+            abogadosIds: full.abogados?.map(a => a.id) || [],
         });
     };
 
@@ -516,13 +554,26 @@ export default function SiniestroDetailPage() {
         }
         try {
             setBusy(true);
-            await apiPost(`/casos/${id}/enviar-correo`, {
-                destinatarios: emailForm.destinatarios,
-                asunto: emailForm.asunto,
-                mensaje: emailForm.mensaje,
-            });
+            const fd = new FormData();
+            fd.append("destinatarios", JSON.stringify(emailForm.destinatarios.split(",").map(d => d.trim()).filter(Boolean)));
+            if (emailForm.cc) {
+                fd.append("cc", JSON.stringify(emailForm.cc.split(",").map(c => c.trim()).filter(Boolean)));
+            }
+            fd.append("asunto", emailForm.asunto);
+            fd.append("mensaje", emailForm.mensaje);
+            if (emailForm.adjuntosPath?.length > 0) {
+                fd.append("adjuntosPath", JSON.stringify(emailForm.adjuntosPath));
+            }
+            if (emailForm.files) {
+                Array.from(emailForm.files).forEach(file => {
+                    fd.append("file", file);
+                });
+            }
+
+            await apiPostForm(`/casos/${id}/enviar-correo-adjuntos`, fd);
             setOpenEmail(false);
             setInfoSaved("Email enviado exitosamente.");
+            setEmailForm({ destinatarios: "", cc: "", asunto: "", mensaje: "", files: [], adjuntosPath: [] });
         } catch (e) {
             setError("Error enviando correo.");
         } finally {
@@ -620,7 +671,11 @@ export default function SiniestroDetailPage() {
                         ? "PROPUESTA_LIQUIDADOR"
                         : g.tipo === "INFORME_FINAL"
                             ? "INFORME_FINAL"
-                            : "OTRO";
+                            : g.tipo === "IMPUGNACION"
+                                ? "INFORME_FINAL"
+                                : g.tipo === "DESPACHO_ANTECEDENTES_LIQUIDADOR"
+                                    ? "ENVIO_INFORMACION_LIQUIDADOR"
+                                    : "OTRO";
         setCompleteModal({
             open: true,
             gestion: g,
@@ -629,9 +684,15 @@ export default function SiniestroDetailPage() {
             fechaRecepcion: "",
             observaciones: "",
             file: null,
+            files: [],
             aceptado: true,
             impugnado: false,
             montoPresupuesto: "",
+            montoPropuesta: "",
+            montoIndemnizacion: "",
+            impugnacionAceptada: true,
+            abogadosAsignados: "",
+            abogadosIds: [],
         });
     };
 
@@ -643,24 +704,59 @@ export default function SiniestroDetailPage() {
             fd.append("tituloDoc", completeModal.tituloDoc);
             fd.append("observaciones", completeModal.observaciones);
             if (completeModal.fechaRecepcion) fd.append("fechaRecepcion", completeModal.fechaRecepcion);
-            if (completeModal.file) fd.append("file", completeModal.file);
+            
+            // Soporte para múltiples archivos
+            if (completeModal.files && completeModal.files.length > 0) {
+                completeModal.files.forEach(f => {
+                    fd.append("file", f);
+                });
+            } else if (completeModal.file) {
+                fd.append("file", completeModal.file);
+            }
             
             // Lógica específica
             if (completeModal.gestion.tipo === "RECEPCION_PROPUESTA") {
                 fd.append("aceptado", completeModal.aceptado);
+                if (completeModal.montoPropuesta) fd.append("montoPropuesta", completeModal.montoPropuesta);
             }
-            if (completeModal.gestion.tipo === "INFORME_FINAL") {
-                fd.append("impugnado", completeModal.impugnado);
+            if (completeModal.gestion.tipo === "INFORME_FINAL" || completeModal.gestion.tipo === "IMPUGNACION") {
+                if (completeModal.gestion.tipo === "INFORME_FINAL") {
+                    fd.append("impugnado", completeModal.impugnado);
+                }
+                const isAccepted = completeModal.gestion.tipo === "IMPUGNACION" ? (completeModal.impugnacionAceptada === true) : (completeModal.impugnado === false || completeModal.impugnacionAceptada === true);
+                if (completeModal.montoIndemnizacion && isAccepted) {
+                    fd.append("montoIndemnizacion", completeModal.montoIndemnizacion);
+                }
+                const showImpugnacionFields = completeModal.gestion.tipo === "IMPUGNACION" || completeModal.impugnado;
+                if (showImpugnacionFields) {
+                    fd.append("impugnacionAceptada", completeModal.impugnacionAceptada);
+                    if (!completeModal.impugnacionAceptada && completeModal.abogadosIds && completeModal.abogadosIds.length > 0) {
+                        fd.append("abogadosIds", JSON.stringify(completeModal.abogadosIds));
+                    }
+                }
             }
             if (completeModal.gestion.tipo === "PRESUPUESTO" && completeModal.montoPresupuesto) {
                 fd.append("montoPresupuesto", completeModal.montoPresupuesto);
             }
 
             await apiPostForm(`/siniestros/${id}/gestiones/${completeModal.gestion.id}/completar`, fd);
-            setCompleteModal({ open: false, gestion: null, file: null, aceptado: true, impugnado: false, montoPresupuesto: "" });
+            setCompleteModal({ open: false, gestion: null, file: null, files: [], aceptado: true, impugnado: false, montoPresupuesto: "", montoPropuesta: "", montoIndemnizacion: "", impugnacionAceptada: true, abogadosAsignados: "", abogadosIds: [] });
             await reloadSelected();
         } catch (e) {
             setError(e?.response?.data?.error || "Error completando gestión.");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const confirmarPasarAJuicio = async () => {
+        setBusy(true);
+        try {
+            await apiPatch(`/siniestros/${id}/info`, { estado: "EN_JUICIO" });
+            setOpenJuicioModal(false);
+            await reloadSelected();
+        } catch (e) {
+            setError(e?.response?.data?.error || "Error al cambiar estado a EN JUICIO");
         } finally {
             setBusy(false);
         }
@@ -1103,6 +1199,9 @@ export default function SiniestroDetailPage() {
                                             <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">Asegurado</span>
                                             <div className="space-y-0.5">
                                                 <p className="text-xl font-black text-on-surface">{selected.nombreCliente}</p>
+                                                {selected.emailCliente && (
+                                                    <p className="text-sm font-medium text-on-surface-variant">{selected.emailCliente}</p>
+                                                )}
                                                 <p className="text-xs font-bold text-on-surface-variant/60">{selected.rutCliente}</p>
                                                 <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-wider">
                                                     <span className="material-symbols-outlined text-[14px]">{selected.esCasoAsesur ? "business" : "person"}</span>
@@ -1168,27 +1267,231 @@ export default function SiniestroDetailPage() {
                                                 options={Object.keys(EstadoSiniestroLabel).map(k => ({ value: k, label: EstadoSiniestroLabel[k] }))}
                                             />
                                         </div>
-                                    </div>
-                                ) : (
-                                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40 ml-3">Compañía</label>
-                                            <div className="rounded-xl bg-surface-container-low px-3 py-2 text-sm font-bold text-on-surface/80 border border-outline-variant/5">{selected.companiaSeguro || "—"}</div>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40 ml-3">N° Siniestro</label>
-                                            <div className="rounded-xl bg-surface-container-low px-3 py-2 text-sm font-bold text-on-surface/80 border border-outline-variant/5">{selected.numeroSiniestro || "—"}</div>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40 ml-3">Liquidador</label>
-                                            <div className="rounded-xl bg-surface-container-low px-3 py-2 text-sm font-bold text-on-surface/80 border border-outline-variant/5">{selected.nombreLiquidador || "—"}</div>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40 ml-3">Estado General</label>
-                                            <div className="flex h-9 text-xs items-center rounded-xl bg-primary/5 px-3 font-black text-primary border border-primary/10">
-                                                {EstadoSiniestroLabel[selected.estado] || selected.estado}
+                                        <div className="sm:col-span-2 space-y-2">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/70 ml-1">
+                                                Abogados Asignados (Demanda)
+                                            </label>
+                                            
+                                            {/* Selected Lawyers Pills */}
+                                            <div className="flex flex-wrap gap-2 mb-2">
+                                                {(infoForm.abogadosIds || []).map(id => {
+                                                    const abg = allAbogados.find(a => a.id === id);
+                                                    if (!abg) return null;
+                                                    return (
+                                                        <div key={id} className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-error/10 border border-error/20 text-xs font-bold text-error">
+                                                            <span>{abg.nombre}</span>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => setInfoForm(p => ({ 
+                                                                    ...p, 
+                                                                    abogadosIds: p.abogadosIds.filter(x => x !== id) 
+                                                                }))} 
+                                                                className="hover:text-error-hover active:scale-95 transition"
+                                                            >
+                                                                <span className="material-symbols-outlined text-sm font-black">close</span>
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {(infoForm.abogadosIds || []).length === 0 && (
+                                                    <span className="text-[10px] font-bold text-on-surface-variant/40 italic uppercase ml-1">
+                                                        Sin abogados asignados
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Search Input */}
+                                            <div className="relative">
+                                                <input 
+                                                    type="text"
+                                                    placeholder="Escribe para buscar o agregar abogado..."
+                                                    value={abogadoSearchEdit}
+                                                    onChange={e => setAbogadoSearchEdit(e.target.value)}
+                                                    className="w-full h-11 px-4 rounded-xl border border-outline-variant/30 bg-surface-container-low text-xs font-bold text-on-surface outline-none focus:border-error/50 transition-colors"
+                                                />
+                                                {abogadoSearchEdit.trim() !== "" && (
+                                                    <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-outline-variant/20 bg-surface-container shadow-lg p-1 space-y-0.5">
+                                                        {filteredAbogadosEdit.map(a => (
+                                                            <button
+                                                                type="button"
+                                                                key={a.id}
+                                                                onClick={() => {
+                                                                    setInfoForm(p => ({ ...p, abogadosIds: [...(p.abogadosIds || []), a.id] }));
+                                                                    setAbogadoSearchEdit("");
+                                                                }}
+                                                                className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-on-surface hover:bg-error/10 hover:text-error transition"
+                                                            >
+                                                                {a.nombre}
+                                                            </button>
+                                                        ))}
+                                                        {filteredAbogadosEdit.length === 0 && (
+                                                            <div className="p-2 text-center text-[10px] font-bold text-on-surface-variant/40 uppercase">
+                                                                No se encontraron abogados
+                                                            </div>
+                                                        )}
+                                                        {/* Add/Create option */}
+                                                        {!allAbogados.some(a => a.nombre.toLowerCase() === abogadoSearchEdit.trim().toLowerCase()) && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        setBusy(true);
+                                                                        const nuevo = await apiPost("/abogados", { nombre: abogadoSearchEdit.trim() });
+                                                                        setAllAbogados(p => [...p, nuevo]);
+                                                                        setInfoForm(p => ({ ...p, abogadosIds: [...(p.abogadosIds || []), nuevo.id] }));
+                                                                        setAbogadoSearchEdit("");
+                                                                    } catch (err) {
+                                                                        setError("Error al crear nuevo abogado.");
+                                                                    } finally {
+                                                                        setBusy(false);
+                                                                    }
+                                                                }}
+                                                                className="w-full text-left px-3 py-2.5 rounded-lg text-xs font-black text-error bg-error/5 hover:bg-error/15 border-t border-outline-variant/10 transition flex items-center justify-between"
+                                                            >
+                                                                <span>+ Crear abogado "{abogadoSearchEdit.trim()}"</span>
+                                                                <span className="material-symbols-outlined text-sm">add</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40 ml-3">Compañía</label>
+                                                <div className="rounded-xl bg-surface-container-low px-3 py-2 text-sm font-bold text-on-surface/80 border border-outline-variant/5">{selected.companiaSeguro || "—"}</div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40 ml-3">N° Siniestro</label>
+                                                <div className="rounded-xl bg-surface-container-low px-3 py-2 text-sm font-bold text-on-surface/80 border border-outline-variant/5">{selected.numeroSiniestro || "—"}</div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40 ml-3">Liquidador</label>
+                                                <div className="rounded-xl bg-surface-container-low px-3 py-2 text-sm font-bold text-on-surface/80 border border-outline-variant/5">{selected.nombreLiquidador || "—"}</div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40 ml-3">Estado General</label>
+                                                <div className="flex h-9 text-xs items-center rounded-xl bg-primary/5 px-3 font-black text-primary border border-primary/10">
+                                                    {EstadoSiniestroLabel[selected.estado] || selected.estado}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid gap-6 sm:grid-cols-3 border-t border-outline-variant/10 pt-6">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-amber-600/70 ml-3">Monto Presupuesto</label>
+                                                <div className="rounded-xl bg-amber-500/5 px-3 py-2 text-sm font-black text-amber-700 border border-amber-500/10 shadow-inner">
+                                                    {selected.montoPresupuesto ? `$${selected.montoPresupuesto.toLocaleString("es-CL")}` : "—"}
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-primary/70 ml-3">Monto Propuesta Liquidador</label>
+                                                <div className="rounded-xl bg-primary/5 px-3 py-2 text-sm font-black text-primary border border-primary/10 shadow-inner">
+                                                    {selected.montoPropuesta ? `$${selected.montoPropuesta.toLocaleString("es-CL")}` : "—"}
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-tertiary/70 ml-3">Indemnización Final</label>
+                                                <div className="rounded-xl bg-tertiary/5 px-3 py-2 text-sm font-black text-tertiary border border-tertiary/10 shadow-inner">
+                                                    {selected.montoIndemnizacion ? `$${selected.montoIndemnizacion.toLocaleString("es-CL")}` : "—"}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {selected.abogadosAsignados && (
+                                            <div className="rounded-xl bg-error/5 p-4 border border-error/10 flex items-center justify-between mt-4">
+                                                <div className="space-y-1">
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-error">Abogados Asignados (Demanda)</span>
+                                                    <div className="text-sm font-black text-on-surface/90">{selected.abogadosAsignados}</div>
+                                                </div>
+                                                <span className="material-symbols-outlined text-error text-2xl">gavel</span>
+                                            </div>
+                                        )}
+
+                                        {(!["CERRADO", "JUICIO_GANADO", "JUICIO_PERDIDO", "DESISTIMIENTO"].includes(selected.estado)) && (
+                                            <div className="border-t border-outline-variant/10 pt-6 space-y-4">
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40 ml-3">Acciones de Flujo / Judiciales</span>
+                                                <div className="flex flex-wrap gap-3">
+                                                    {selected.estado === "DEMANDA" && (
+                                                        <button 
+                                                            disabled={busy}
+                                                            onClick={() => setOpenJuicioModal(true)}
+                                                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-primary text-on-primary hover:bg-primary-hover shadow-md transition-all active:scale-95"
+                                                        >
+                                                            <span className="material-symbols-outlined text-sm">gavel</span>
+                                                            Cambiar a "EN JUICIO"
+                                                        </button>
+                                                    )}
+                                                    {selected.estado === "EN_JUICIO" && (
+                                                        <>
+                                                            <button 
+                                                                disabled={busy}
+                                                                onClick={async () => {
+                                                                    if (confirm("¿Confirmas la resolución del juicio como GANADO? Esto dará fin al caso.")) {
+                                                                        setBusy(true);
+                                                                        try {
+                                                                            await apiPatch(`/siniestros/${id}/info`, { estado: "JUICIO_GANADO" });
+                                                                            await reloadSelected();
+                                                                        } catch (e) {
+                                                                            setError(e?.response?.data?.error || "Error al actualizar estado");
+                                                                        } finally {
+                                                                            setBusy(false);
+                                                                        }
+                                                                    }
+                                                                }}
+                                                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-tertiary text-on-tertiary hover:bg-tertiary-hover shadow-md transition-all active:scale-95"
+                                                            >
+                                                                <span className="material-symbols-outlined text-sm">emoji_events</span>
+                                                                🏆 Juicio Ganado
+                                                            </button>
+                                                            <button 
+                                                                disabled={busy}
+                                                                onClick={async () => {
+                                                                    if (confirm("¿Confirmas la resolución del juicio como PERDIDO? Esto dará fin al caso.")) {
+                                                                        setBusy(true);
+                                                                        try {
+                                                                            await apiPatch(`/siniestros/${id}/info`, { estado: "JUICIO_PERDIDO" });
+                                                                            await reloadSelected();
+                                                                        } catch (e) {
+                                                                            setError(e?.response?.data?.error || "Error al actualizar estado");
+                                                                        } finally {
+                                                                            setBusy(false);
+                                                                        }
+                                                                    }
+                                                                }}
+                                                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-error text-on-error hover:bg-error-hover shadow-md transition-all active:scale-95"
+                                                            >
+                                                                <span className="material-symbols-outlined text-sm">gavel</span>
+                                                                ❌ Juicio Perdido
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    <button 
+                                                        disabled={busy}
+                                                        onClick={async () => {
+                                                            if (confirm("¿Estás seguro de que deseas DESISTIR de este caso? Esta acción dará fin al caso.")) {
+                                                                setBusy(true);
+                                                                try {
+                                                                    await apiPatch(`/siniestros/${id}/info`, { estado: "DESISTIMIENTO" });
+                                                                    await reloadSelected();
+                                                                } catch (e) {
+                                                                    setError(e?.response?.data?.error || "Error al registrar desistimiento");
+                                                                } finally {
+                                                                    setBusy(false);
+                                                                }
+                                                            }
+                                                        }}
+                                                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-surface-container-highest text-on-surface hover:bg-outline-variant/20 border border-outline-variant/10 shadow-sm transition-all active:scale-95 ml-auto"
+                                                    >
+                                                        <span className="material-symbols-outlined text-sm">block</span>
+                                                        🚫 Desistir Caso
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -1332,16 +1635,44 @@ export default function SiniestroDetailPage() {
                                                                             <Pill tone={tone} className="px-4 py-1.5 text-[11px]">{EstadoGestionLabel[g.estado]}</Pill>
                                                                             
                                                                             {isDone && g.documentoRelacionado && (
-                                                                                <a 
-                                                                                    href={fileUrl(g.documentoRelacionado.urlArchivo)} 
-                                                                                    target="_blank" 
-                                                                                    rel="noreferrer"
-                                                                                    onClick={e => e.stopPropagation()}
-                                                                                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container-high border border-outline-variant/10 text-[11px] font-black text-primary hover:bg-primary hover:text-on-primary transition-all shadow-sm"
-                                                                                >
-                                                                                    <span className="material-symbols-outlined text-sm">attach_file</span>
-                                                                                    VER DOCUMENTO
-                                                                                </a>
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <a 
+                                                                                        href={fileUrl(g.documentoRelacionado.urlArchivo)} 
+                                                                                        target="_blank" 
+                                                                                        rel="noreferrer"
+                                                                                        onClick={e => e.stopPropagation()}
+                                                                                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container-high border border-outline-variant/10 text-[11px] font-black text-primary hover:bg-primary hover:text-on-primary transition-all shadow-sm"
+                                                                                    >
+                                                                                        <span className="material-symbols-outlined text-sm">attach_file</span>
+                                                                                        VER DOCUMENTO
+                                                                                    </a>
+                                                                                    <Button
+                                                                                        variant="secondary"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            const paths = [];
+                                                                                            if (g.tipo === "DESPACHO_ANTECEDENTES_LIQUIDADOR") {
+                                                                                                const relatedDocs = selected.documentos?.filter(d => d.tipo === "ENVIO_INFORMACION_LIQUIDADOR") || [];
+                                                                                                paths.push(...relatedDocs.map(d => d.urlArchivo));
+                                                                                            } else if (g.documentoRelacionado?.urlArchivo) {
+                                                                                                paths.push(g.documentoRelacionado.urlArchivo);
+                                                                                            }
+                                                                                            setEmailForm({
+                                                                                                destinatarios: "",
+                                                                                                cc: "",
+                                                                                                asunto: `Documento: ${g.titulo || g.tipo} - Siniestro SIN-${String(selected.folio).padStart(6, "0")}`,
+                                                                                                mensaje: `Adjunto documento correspondiente a: ${g.titulo || g.tipo}.\n\nSaludos.`,
+                                                                                                files: [],
+                                                                                                adjuntosPath: paths
+                                                                                            });
+                                                                                            setOpenEmail(true);
+                                                                                        }}
+                                                                                        className="px-3 h-10"
+                                                                                        title="Enviar por correo"
+                                                                                    >
+                                                                                        <span className="material-symbols-outlined text-sm">forward_to_inbox</span>
+                                                                                    </Button>
+                                                                                </div>
                                                                             )}
 
                                                                             {isPending && !isBlocked && (
@@ -1386,12 +1717,15 @@ export default function SiniestroDetailPage() {
                                                                                 variant="secondary" 
                                                                                 onClick={(e) => {
                                                                                     e.stopPropagation();
-                                                                                    setEmailForm(p => ({
-                                                                                        ...p,
+                                                                                    const relatedDocs = selected.documentos?.filter(d => d.tipo === "ENVIO_INFORMACION_LIQUIDADOR") || [];
+                                                                                    setEmailForm({
                                                                                         destinatarios: selected.emailLiquidador || "",
+                                                                                        cc: "",
                                                                                         asunto: `Antecedentes Liquidación - Siniestro SIN-${String(selected.folio).padStart(6, "0")}`,
-                                                                                        mensaje: `Estimado ${selected.nombreLiquidador || "Liquidador"},\n\nAdjunto enviamos antecedentes para el proceso de liquidación del siniestro folio ${selected.folio}.\n\nQuedamos a su disposición.`
-                                                                                    }));
+                                                                                        mensaje: `Estimado ${selected.nombreLiquidador || "Liquidador"},\n\nAdjunto enviamos antecedentes para el proceso de liquidación del siniestro folio ${selected.folio}.\n\nQuedamos a su disposición.`,
+                                                                                        files: [],
+                                                                                        adjuntosPath: relatedDocs.map(d => d.urlArchivo)
+                                                                                    });
                                                                                     setOpenEmail(true);
                                                                                 }}
                                                                                 className="h-9 px-4 text-[10px]"
@@ -1680,7 +2014,25 @@ export default function SiniestroDetailPage() {
                                                             <span className="material-symbols-outlined text-xl">swap_horiz</span>
                                                         </button>
                                                     )}
-                                                    <Button variant="secondary" onClick={() => window.open(fileUrl(d.urlArchivo))} className="h-11 w-11 rounded-full p-0">
+                                                    <Button 
+                                                        variant="secondary" 
+                                                        onClick={() => {
+                                                            setEmailForm({
+                                                                destinatarios: "",
+                                                                cc: "",
+                                                                asunto: `Documento: ${d.titulo || d.tipo} - Siniestro SIN-${String(selected.folio).padStart(6, "0")}`,
+                                                                mensaje: `Adjunto documento correspondiente a: ${d.titulo || d.tipo}.\n\nSaludos.`,
+                                                                files: [],
+                                                                adjuntosPath: [d.urlArchivo]
+                                                            });
+                                                            setOpenEmail(true);
+                                                        }} 
+                                                        className="h-11 w-11 rounded-full p-0"
+                                                        title="Enviar por correo"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[18px]">forward_to_inbox</span>
+                                                    </Button>
+                                                    <Button variant="secondary" onClick={() => window.open(fileUrl(d.urlArchivo))} className="h-11 w-11 rounded-full p-0" title="Descargar">
                                                         <span className="material-symbols-outlined">download</span>
                                                     </Button>
                                                 </div>
@@ -1784,28 +2136,37 @@ export default function SiniestroDetailPage() {
                                                         <Input label="Monto Honorarios (Calculado)" type="number" value={nuevoPago.montoHonorarios} 
                                                             onChange={(v) => setNuevoPago(prev => ({...prev, montoHonorarios: v}))} 
                                                         />
-                                                        <Select 
-                                                            label="Estado de Boleta" 
-                                                            value={nuevoPago.estadoFacturacion} 
-                                                            onChange={v => {
-                                                                const today = new Date().toISOString().slice(0, 10);
-                                                                setNuevoPago(p => ({ 
-                                                                    ...p, 
-                                                                    estadoFacturacion: v,
-                                                                    fechaPago: v === 'PAGADO' ? (p.fechaPago || today) : '',
-                                                                    fechaEnvioBoleta: (v === 'ENVIADO_CLIENTE' || v === 'PAGADO') ? (p.fechaEnvioBoleta || today) : ''
-                                                                }));
-                                                            }} 
-                                                            options={Object.keys(EstadoFacturacionLabel).map(k => ({ value: k, label: EstadoFacturacionLabel[k] }))} 
-                                                        />
+                                                        <div className="flex flex-col gap-2 justify-center">
+                                                            <label className="flex items-center gap-3 cursor-pointer">
+                                                                <div className={cls(
+                                                                    "flex h-6 w-6 items-center justify-center rounded border transition",
+                                                                    nuevoPago.estadoFacturacion === 'PAGADO' ? "bg-primary border-primary text-on-primary" : "border-outline-variant text-transparent"
+                                                                )}>
+                                                                    <span className="material-symbols-outlined text-[16px] font-bold">check</span>
+                                                                </div>
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    className="hidden"
+                                                                    checked={nuevoPago.estadoFacturacion === 'PAGADO'}
+                                                                    onChange={(e) => {
+                                                                        const isChecked = e.target.checked;
+                                                                        const today = new Date().toISOString().slice(0, 10);
+                                                                        setNuevoPago(p => ({
+                                                                            ...p,
+                                                                            estadoFacturacion: isChecked ? 'PAGADO' : 'PENDIENTE',
+                                                                            fechaPago: isChecked ? (p.fechaPago || today) : '',
+                                                                            fechaEnvioBoleta: ''
+                                                                        }));
+                                                                    }}
+                                                                />
+                                                                <span className="text-sm font-bold text-on-surface">¿Pagado?</span>
+                                                            </label>
+                                                        </div>
                                                     </div>
                                                     
-                                                    {nuevoPago.estadoFacturacion !== 'PENDIENTE' && (
+                                                    {nuevoPago.estadoFacturacion === 'PAGADO' && (
                                                         <div className="grid gap-6 sm:grid-cols-2 animate-in fade-in slide-in-from-top-1">
-                                                            {nuevoPago.estadoFacturacion === 'PAGADO' && (
-                                                                <Input label="Fecha Pago" type="date" value={nuevoPago.fechaPago} onChange={v => setNuevoPago(p => ({ ...p, fechaPago: v }))} />
-                                                            )}
-                                                            <Input label="Fecha Envío al Cliente" type="date" value={nuevoPago.fechaEnvioBoleta} onChange={v => setNuevoPago(p => ({ ...p, fechaEnvioBoleta: v }))} />
+                                                            <Input label="Fecha Pago" type="date" value={nuevoPago.fechaPago} onChange={v => setNuevoPago(p => ({ ...p, fechaPago: v }))} />
                                                         </div>
                                                     )}
                                                     <Input label="Nota del pago (Hito)" value={nuevoPago.notas} onChange={v => setNuevoPago(p => ({ ...p, notas: v }))} placeholder="Ej: Pago hito 1..." />
@@ -1896,7 +2257,6 @@ export default function SiniestroDetailPage() {
                                                                         </div>
                                                                         <div className="grid gap-6 sm:grid-cols-2">
                                                                             <Input label="Fecha Pago" type="date" value={toDateInput(ep.fechaPago)} onChange={v => setEditPago(prev => ({...prev, [p.id]: {...prev[p.id], fechaPago: v}}))} />
-                                                                            <Input label="Fecha Envío al Cliente" type="date" value={toDateInput(ep.fechaEnvioCliente || ep.fechaEnvioBoleta)} onChange={v => setEditPago(prev => ({...prev, [p.id]: {...prev[p.id], fechaEnvioCliente: v}}))} />
                                                                         </div>
                                                                         
                                                                         <div className="space-y-1.5">
@@ -1941,7 +2301,7 @@ export default function SiniestroDetailPage() {
                                                                     /* MODO VISTA */
                                                                     <div className="flex-1 flex flex-col gap-6">
                                                                         <div className="flex items-start gap-6">
-                                                                            <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-6">
+                                                                            <div className="flex-1 grid grid-cols-2 sm:grid-cols-5 gap-6">
                                                                                 <div className="flex flex-col">
                                                                                     <span className="text-[10px] font-black uppercase tracking-widest opacity-40">Tramo / %</span>
                                                                                     <span className="text-lg font-black">{p.porcentajeCobro}%</span>
@@ -1969,27 +2329,6 @@ export default function SiniestroDetailPage() {
                                                                                     </div>
                                                                                 </div>
                                                                                 <div className="flex flex-col gap-1">
-                                                                                    <span className="text-[10px] font-black uppercase tracking-widest opacity-40">Boleta</span>
-                                                                                    {p.boletaEmitida ? (
-                                                                                        <div className="flex flex-col">
-                                                                                            <span className="text-xs font-bold text-primary flex items-center gap-1">
-                                                                                                <span className="material-symbols-outlined text-sm">receipt_long</span>
-                                                                                                Emitida
-                                                                                            </span>
-                                                                                            {p.fechaEmisionBoleta && (
-                                                                                                <span className="text-[10px] opacity-50">{new Date(p.fechaEmisionBoleta).toLocaleDateString()}</span>
-                                                                                            )}
-                                                                                            {p.referenciaBoleta && (
-                                                                                                <span className="text-[10px] opacity-60">Ref: {p.referenciaBoleta}</span>
-                                                                                            )}
-                                                                                        </div>
-                                                                                    ) : (
-                                                                                        <span className={cls("text-xs font-bold", sinBoleta ? "text-amber-500" : "opacity-40")}>
-                                                                                            {sinBoleta ? "⚠ Sin emitir" : "—"}
-                                                                                        </span>
-                                                                                    )}
-                                                                                </div>
-                                                                                <div className="flex flex-col gap-1">
                                                                                     <span className="text-[10px] font-black uppercase tracking-widest opacity-40">Comprobante</span>
                                                                                     {p.urlComprobante ? (
                                                                                         <a href={fileUrl(p.urlComprobante)} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs font-black text-primary hover:underline">
@@ -2000,37 +2339,30 @@ export default function SiniestroDetailPage() {
                                                                                         <span className="text-xs font-bold opacity-30">—</span>
                                                                                     )}
                                                                                 </div>
+                                                                                <div className="flex flex-col gap-1">
+                                                                                    <span className="text-[10px] font-black uppercase tracking-widest opacity-40">Fecha de Pago</span>
+                                                                                    {p.fechaPago ? (
+                                                                                        <span className="text-sm font-bold text-on-surface">
+                                                                                            {new Date(p.fechaPago).toLocaleDateString()}
+                                                                                        </span>
+                                                                                    ) : (
+                                                                                        <span className="text-sm font-bold opacity-30">—</span>
+                                                                                    )}
+                                                                                </div>
                                                                             </div>
                                                                             
                                                                             <div className="flex items-center gap-2">
-                                                                                {/* Botón "Emitir Boleta" solo si está PAGADO y sin boleta */}
-                                                                                {sinBoleta && (
-                                                                                    <button 
-                                                                                        onClick={() => emitirBoleta(p.id)}
-                                                                                        title="Emitir boleta para este tramo"
-                                                                                        className="h-10 px-3 flex items-center gap-1 rounded-full bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white transition-all shadow-sm text-xs font-black"
-                                                                                    >
-                                                                                        <span className="material-symbols-outlined text-sm">receipt_long</span>
-                                                                                        Emitir Boleta
-                                                                                    </button>
-                                                                                )}
                                                                                 {p.estadoFacturacion !== 'PAGADO' && (
                                                                                     <button 
-                                                                                        onClick={() => {
-                                                                                            if (p.estadoFacturacion === 'PENDIENTE') {
-                                                                                                updatePagoStatus(p.id, 'ENVIADO_CLIENTE');
-                                                                                            } else {
-                                                                                                setConfirmPago(prev => ({...prev, [p.id]: { fechaPago: new Date().toISOString().slice(0, 10) }}));
-                                                                                            }
-                                                                                        }}
-                                                                                        title={p.estadoFacturacion === 'PENDIENTE' ? "Marcar como enviado al cliente" : "Marcar como pagado"}
+                                                                                        onClick={() => setConfirmPago(prev => ({...prev, [p.id]: { fechaPago: new Date().toISOString().slice(0, 10) }}))}
+                                                                                        title="Marcar como pagado"
                                                                                         className={cls(
                                                                                             "h-10 w-10 flex items-center justify-center rounded-full transition-all shadow-sm",
                                                                                             confirmPago[p.id] ? "bg-primary text-on-primary ring-4 ring-primary/20" : "bg-primary/10 text-primary hover:bg-primary hover:text-white"
                                                                                         )}
                                                                                     >
                                                                                         <span className="material-symbols-outlined">
-                                                                                            {confirmPago[p.id] ? 'calendar_month' : (p.estadoFacturacion === 'PENDIENTE' ? 'outgoing_mail' : 'check_circle')}
+                                                                                            {confirmPago[p.id] ? 'calendar_month' : 'check_circle'}
                                                                                         </span>
                                                                                     </button>
                                                                                 )}
@@ -2128,29 +2460,372 @@ export default function SiniestroDetailPage() {
                         )}
                         {completeModal.gestion?.tipo === "INSPECCION" && <Input label="Fecha Real Inspección" type="date" value={completeModal.fechaRecepcion} onChange={v => setCompleteModal(p => ({ ...p, fechaRecepcion: v }))} />}
                         {completeModal.gestion?.tipo === "RECEPCION_PROPUESTA" && (
-                            <div className="flex items-center gap-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
-                                <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se acepta la propuesta?</span>
-                                <div className="flex gap-2">
-                                    <button onClick={() => setCompleteModal(p => ({ ...p, aceptado: true }))} className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.aceptado ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}>Si, Aceptar</button>
-                                    <button onClick={() => setCompleteModal(p => ({ ...p, aceptado: false }))} className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.aceptado ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}>No, Rechazar</button>
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
+                                    <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se acepta la propuesta?</span>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setCompleteModal(p => ({ ...p, aceptado: true }))} className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.aceptado ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}>Si, Aceptar</button>
+                                        <button onClick={() => setCompleteModal(p => ({ ...p, aceptado: false }))} className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.aceptado ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}>No, Rechazar</button>
+                                    </div>
+                                </div>
+                                <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10">
+                                    <Input 
+                                        label="Monto Ofrecido en la Propuesta ($)" 
+                                        type="number"
+                                        placeholder="Ej: 3450000"
+                                        value={completeModal.montoPropuesta}
+                                        onChange={v => setCompleteModal(p => ({ ...p, montoPropuesta: v }))}
+                                    />
                                 </div>
                             </div>
                         )}
                         {completeModal.gestion?.tipo === "INFORME_FINAL" && (
-                            <div className="flex items-center gap-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
-                                <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se impugna el informe?</span>
-                                <div className="flex gap-2">
-                                    <button onClick={() => setCompleteModal(p => ({ ...p, impugnado: true }))} className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.impugnado ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}>Si, Impugnar</button>
-                                    <button onClick={() => setCompleteModal(p => ({ ...p, impugnado: false }))} className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.impugnado ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}>No Impugnar</button>
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
+                                    <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se impugna el informe?</span>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={() => setCompleteModal(p => ({ ...p, impugnado: true }))} 
+                                            className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.impugnado ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}
+                                        >
+                                            Si, Impugnar
+                                        </button>
+                                        <button 
+                                            onClick={() => setCompleteModal(p => ({ ...p, impugnado: false, tipoDoc: "INFORME_FINAL", tituloDoc: "Informe Final" }))} 
+                                            className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.impugnado ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}
+                                        >
+                                            No Impugnar
+                                        </button>
+                                    </div>
                                 </div>
+
+                                {completeModal.impugnado && (
+                                    <div className="space-y-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
+                                        <div className="flex items-center gap-4">
+                                            <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se acepta la impugnación?</span>
+                                            <div className="flex gap-2">
+                                                <button 
+                                                    onClick={() => setCompleteModal(p => ({ ...p, impugnacionAceptada: true, tipoDoc: "INFORME_FINAL", tituloDoc: "Informe Final" }))} 
+                                                    className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.impugnacionAceptada ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}
+                                                >
+                                                    Sí, la aceptan
+                                                </button>
+                                                <button 
+                                                    onClick={() => setCompleteModal(p => ({ ...p, impugnacionAceptada: false, tipoDoc: "MANDATO_ASESORIA_NOTARIAL", tituloDoc: "Mandato Asesoría Notarial para juicio" }))} 
+                                                    className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.impugnacionAceptada ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}
+                                                >
+                                                    No, la rechazan
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {!completeModal.impugnacionAceptada && (
+                                            <div className="space-y-4 p-4 rounded-xl bg-error/5 border border-error/10">
+                                                <p className="text-[10px] font-black uppercase text-error tracking-widest leading-relaxed">
+                                                    * Se iniciará demanda judicial. Por favor asigne el/los abogado(s) encargados y suba el Mandato Asesoría Notarial para juicio.
+                                                </p>
+                                                
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/70 ml-1">
+                                                        Asignar Abogado(s) *
+                                                    </label>
+                                                    
+                                                    {/* Selected Lawyers Pills */}
+                                                    <div className="flex flex-wrap gap-2 mb-2">
+                                                        {(completeModal.abogadosIds || []).map(id => {
+                                                            const abg = allAbogados.find(a => a.id === id);
+                                                            if (!abg) return null;
+                                                            return (
+                                                                <div key={id} className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-error/10 border border-error/20 text-xs font-bold text-error">
+                                                                    <span>{abg.nombre}</span>
+                                                                    <button 
+                                                                        type="button"
+                                                                        onClick={() => setCompleteModal(p => ({ 
+                                                                            ...p, 
+                                                                            abogadosIds: p.abogadosIds.filter(x => x !== id) 
+                                                                        }))} 
+                                                                        className="hover:text-error-hover active:scale-95 transition"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-sm font-black">close</span>
+                                                                    </button>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                        {(completeModal.abogadosIds || []).length === 0 && (
+                                                            <span className="text-[10px] font-bold text-on-surface-variant/40 italic uppercase ml-1">
+                                                                Sin abogados asignados
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Search Input */}
+                                                    <div className="relative">
+                                                        <input 
+                                                            type="text"
+                                                            placeholder="Escribe para buscar o agregar abogado..."
+                                                            value={abogadoSearchModal}
+                                                            onChange={e => setAbogadoSearchModal(e.target.value)}
+                                                            className="w-full h-11 px-4 rounded-xl border border-outline-variant/30 bg-surface-container-low text-xs font-bold text-on-surface outline-none focus:border-error/50 transition-colors"
+                                                        />
+                                                        {abogadoSearchModal.trim() !== "" && (
+                                                            <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-outline-variant/20 bg-surface-container shadow-lg p-1 space-y-0.5">
+                                                                {filteredAbogadosModal.map(a => (
+                                                                    <button
+                                                                        type="button"
+                                                                        key={a.id}
+                                                                        onClick={() => {
+                                                                            setCompleteModal(p => ({ ...p, abogadosIds: [...(p.abogadosIds || []), a.id] }));
+                                                                            setAbogadoSearchModal("");
+                                                                        }}
+                                                                        className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-on-surface hover:bg-error/10 hover:text-error transition"
+                                                                    >
+                                                                        {a.nombre}
+                                                                    </button>
+                                                                ))}
+                                                                {filteredAbogadosModal.length === 0 && (
+                                                                    <div className="p-2 text-center text-[10px] font-bold text-on-surface-variant/40 uppercase">
+                                                                        No se encontraron abogados
+                                                                    </div>
+                                                                )}
+                                                                {/* Add/Create option */}
+                                                                {!allAbogados.some(a => a.nombre.toLowerCase() === abogadoSearchModal.trim().toLowerCase()) && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={async () => {
+                                                                            try {
+                                                                                setBusy(true);
+                                                                                const nuevo = await apiPost("/abogados", { nombre: abogadoSearchModal.trim() });
+                                                                                setAllAbogados(p => [...p, nuevo]);
+                                                                                setCompleteModal(p => ({ ...p, abogadosIds: [...(p.abogadosIds || []), nuevo.id] }));
+                                                                                setAbogadoSearchModal("");
+                                                                            } catch (err) {
+                                                                                setError("Error al crear nuevo abogado.");
+                                                                            } finally {
+                                                                                setBusy(false);
+                                                                            }
+                                                                        }}
+                                                                        className="w-full text-left px-3 py-2.5 rounded-lg text-xs font-black text-error bg-error/5 hover:bg-error/15 border-t border-outline-variant/10 transition flex items-center justify-between"
+                                                                    >
+                                                                        <span>+ Crear abogado "{abogadoSearchModal.trim()}"</span>
+                                                                        <span className="material-symbols-outlined text-sm">add</span>
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {!(completeModal.impugnado && !completeModal.impugnacionAceptada) && (
+                                    <div className="p-4 rounded-2xl bg-tertiary/5 border border-tertiary/10">
+                                        <Input 
+                                            label="Monto Final Acordado ($)" 
+                                            type="number"
+                                            placeholder="Ej: 3800000"
+                                            value={completeModal.montoIndemnizacion}
+                                            onChange={v => setCompleteModal(p => ({ ...p, montoIndemnizacion: v }))}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        {completeModal.gestion?.tipo === "IMPUGNACION" && (
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
+                                    <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se acepta la impugnación?</span>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            type="button"
+                                            onClick={() => setCompleteModal(p => ({ ...p, impugnacionAceptada: true, tipoDoc: "INFORME_FINAL", tituloDoc: "Informe Final" }))} 
+                                            className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.impugnacionAceptada ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}
+                                        >
+                                            Sí, la aceptan
+                                        </button>
+                                        <button 
+                                            type="button"
+                                            onClick={() => setCompleteModal(p => ({ ...p, impugnacionAceptada: false, tipoDoc: "MANDATO_ASESORIA_NOTARIAL", tituloDoc: "Mandato Asesoría Notarial para juicio" }))} 
+                                            className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.impugnacionAceptada ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}
+                                        >
+                                            No, la rechazan
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {!completeModal.impugnacionAceptada && (
+                                    <div className="space-y-4 p-4 rounded-xl bg-error/5 border border-error/10">
+                                        <p className="text-[10px] font-black uppercase text-error tracking-widest leading-relaxed">
+                                            * Se iniciará demanda judicial. Por favor asigne el/los abogado(s) encargados y suba el Mandato Asesoría Notarial para juicio.
+                                        </p>
+                                        
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/70 ml-1">
+                                                Asignar Abogado(s) *
+                                            </label>
+                                            
+                                            {/* Selected Lawyers Pills */}
+                                            <div className="flex flex-wrap gap-2 mb-2">
+                                                {(completeModal.abogadosIds || []).map(id => {
+                                                    const abg = allAbogados.find(a => a.id === id);
+                                                    if (!abg) return null;
+                                                    return (
+                                                        <div key={id} className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-error/10 border border-error/20 text-xs font-bold text-error">
+                                                            <span>{abg.nombre}</span>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => setCompleteModal(p => ({ 
+                                                                    ...p, 
+                                                                    abogadosIds: p.abogadosIds.filter(x => x !== id) 
+                                                                }))} 
+                                                                className="hover:text-error-hover active:scale-95 transition"
+                                                            >
+                                                                <span className="material-symbols-outlined text-sm font-black">close</span>
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {(completeModal.abogadosIds || []).length === 0 && (
+                                                    <span className="text-[10px] font-bold text-on-surface-variant/40 italic uppercase ml-1">
+                                                        Sin abogados asignados
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Search Input */}
+                                            <div className="relative">
+                                                <input 
+                                                    type="text"
+                                                    placeholder="Escribe para buscar o agregar abogado..."
+                                                    value={abogadoSearchModal}
+                                                    onChange={e => setAbogadoSearchModal(e.target.value)}
+                                                    className="w-full h-11 px-4 rounded-xl border border-outline-variant/30 bg-surface-container-low text-xs font-bold text-on-surface outline-none focus:border-error/50 transition-colors"
+                                                />
+                                                {abogadoSearchModal.trim() !== "" && (
+                                                    <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-outline-variant/20 bg-surface-container shadow-lg p-1 space-y-0.5">
+                                                        {filteredAbogadosModal.map(a => (
+                                                            <button
+                                                                type="button"
+                                                                key={a.id}
+                                                                onClick={() => {
+                                                                    setCompleteModal(p => ({ ...p, abogadosIds: [...(p.abogadosIds || []), a.id] }));
+                                                                    setAbogadoSearchModal("");
+                                                                }}
+                                                                className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-on-surface hover:bg-error/10 hover:text-error transition"
+                                                            >
+                                                                {a.nombre}
+                                                            </button>
+                                                        ))}
+                                                        {filteredAbogadosModal.length === 0 && (
+                                                            <div className="p-2 text-center text-[10px] font-bold text-on-surface-variant/40 uppercase">
+                                                                No se encontraron abogados
+                                                            </div>
+                                                        )}
+                                                        {/* Add/Create option */}
+                                                        {!allAbogados.some(a => a.nombre.toLowerCase() === abogadoSearchModal.trim().toLowerCase()) && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        setBusy(true);
+                                                                        const nuevo = await apiPost("/abogados", { nombre: abogadoSearchModal.trim() });
+                                                                        setAllAbogados(p => [...p, nuevo]);
+                                                                        setCompleteModal(p => ({ ...p, abogadosIds: [...(p.abogadosIds || []), nuevo.id] }));
+                                                                        setAbogadoSearchModal("");
+                                                                    } catch (err) {
+                                                                        setError("Error al crear nuevo abogado.");
+                                                                    } finally {
+                                                                        setBusy(false);
+                                                                    }
+                                                                }}
+                                                                className="w-full text-left px-3 py-2.5 rounded-lg text-xs font-black text-error bg-error/5 hover:bg-error/15 border-t border-outline-variant/10 transition flex items-center justify-between"
+                                                            >
+                                                                <span>+ Crear abogado "{abogadoSearchModal.trim()}"</span>
+                                                                <span className="material-symbols-outlined text-sm">add</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {completeModal.impugnacionAceptada && (
+                                    <div className="p-4 rounded-2xl bg-tertiary/5 border border-tertiary/10">
+                                        <Input 
+                                            label="Monto Final Acordado ($)" 
+                                            type="number"
+                                            placeholder="Ej: 3800000"
+                                            value={completeModal.montoIndemnizacion}
+                                            onChange={v => setCompleteModal(p => ({ ...p, montoIndemnizacion: v }))}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         )}
                         <Textarea label="Observaciones Finales" value={completeModal.observaciones} onChange={v => setCompleteModal(p => ({ ...p, observaciones: v }))} />
-                        <div className="relative rounded-2xl border-2 border-dashed border-outline-variant/30 p-8 flex flex-col items-center justify-center hover:bg-primary/5 transition-colors cursor-pointer">
-                            <input type="file" onChange={e => setCompleteModal(p => ({ ...p, file: e.target.files[0] }))} className="absolute inset-0 opacity-0 cursor-pointer" />
-                            <span className="material-symbols-outlined text-4xl mb-2 text-primary/40">cloud_upload</span>
-                            <span className="text-xs font-black uppercase tracking-widest">{completeModal.file ? completeModal.file.name : "Subir Archivo de Respaldo"}</span>
-                        </div>
+                        {completeModal.gestion?.tipo === "DESPACHO_ANTECEDENTES_LIQUIDADOR" ? (
+                            <div className="space-y-4">
+                                <div className="relative rounded-2xl border-2 border-dashed border-outline-variant/30 p-8 flex flex-col items-center justify-center hover:bg-primary/5 transition-colors cursor-pointer">
+                                    <input 
+                                        type="file" 
+                                        multiple 
+                                        onChange={e => {
+                                            const selectedFiles = Array.from(e.target.files);
+                                            setCompleteModal(p => ({
+                                                ...p,
+                                                files: [...(p.files || []), ...selectedFiles]
+                                            }));
+                                        }} 
+                                        className="absolute inset-0 opacity-0 cursor-pointer" 
+                                    />
+                                    <span className="material-symbols-outlined text-4xl mb-2 text-primary/40">cloud_upload</span>
+                                    <span className="text-xs font-black uppercase tracking-widest text-center">
+                                        Seleccionar o arrastrar archivos
+                                    </span>
+                                    <span className="text-[10px] text-on-surface-variant/60 font-semibold uppercase mt-1">
+                                        (Puedes subir más de 1 archivo)
+                                    </span>
+                                </div>
+                                
+                                {completeModal.files && completeModal.files.length > 0 && (
+                                    <div className="space-y-2">
+                                        <p className="text-[10px] font-bold tracking-widest uppercase text-on-surface-variant/70">Archivos seleccionados ({completeModal.files.length}):</p>
+                                        <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                                            {completeModal.files.map((file, idx) => (
+                                                <div key={idx} className="flex items-center justify-between p-3 bg-surface-container-low border border-outline-variant/10 rounded-xl">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="material-symbols-outlined text-primary text-lg">description</span>
+                                                        <span className="text-xs font-semibold text-on-surface truncate">{file.name}</span>
+                                                        <span className="text-[9px] text-on-surface-variant font-bold opacity-60">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+                                                    </div>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setCompleteModal(p => ({
+                                                                ...p,
+                                                                files: p.files.filter((_, i) => i !== idx)
+                                                            }));
+                                                        }}
+                                                        className="p-1 hover:bg-error/10 text-error hover:text-error rounded-lg transition-colors flex items-center justify-center"
+                                                    >
+                                                        <span className="material-symbols-outlined text-base">close</span>
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="relative rounded-2xl border-2 border-dashed border-outline-variant/30 p-8 flex flex-col items-center justify-center hover:bg-primary/5 transition-colors cursor-pointer">
+                                <input type="file" onChange={e => setCompleteModal(p => ({ ...p, file: e.target.files[0] }))} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                <span className="material-symbols-outlined text-4xl mb-2 text-primary/40">cloud_upload</span>
+                                <span className="text-xs font-black uppercase tracking-widest">{completeModal.file ? completeModal.file.name : "Subir Archivo de Respaldo"}</span>
+                            </div>
+                        )}
                     </div>
                 </Modal>
             )}
@@ -2181,6 +2856,160 @@ export default function SiniestroDetailPage() {
                                     <img src={fileUrl(f.urlArchivo)} className="h-full w-full object-cover" />
                                 </div>
                             ))}
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
+            {openJuicioModal && (
+                <Modal 
+                    open={openJuicioModal} 
+                    onClose={() => setOpenJuicioModal(false)} 
+                    title="⚖️ Iniciar Juicio" 
+                    footer={
+                        <div className="flex gap-2">
+                            <Button onClick={() => setOpenJuicioModal(false)} variant="secondary">Cancelar</Button>
+                            <Button onClick={confirmarPasarAJuicio} disabled={busy}>
+                                {busy ? "Procesando..." : "Confirmar e Iniciar"}
+                            </Button>
+                        </div>
+                    }
+                >
+                    <div className="space-y-4 text-left p-2">
+                        <div className="flex items-start gap-3 p-4 rounded-2xl bg-primary/5 border border-primary/10">
+                            <span className="material-symbols-outlined text-primary text-2xl mt-0.5">gavel</span>
+                            <div className="space-y-1">
+                                <h4 className="text-xs font-black uppercase tracking-widest text-primary">¿Confirmas el cambio de estado a EN JUICIO?</h4>
+                                <p className="text-xs text-on-surface-variant/80 leading-relaxed">
+                                    El caso pasará formalmente a etapa judicial. Se habilitará el registro de resoluciones (Ganado/Perdido) y la gestión del proceso.
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/10 text-xs font-medium space-y-2">
+                            <div className="flex justify-between">
+                                <span className="text-on-surface-variant/60">Caso:</span>
+                                <span className="font-bold text-on-surface">#{selected.id?.substring(0, 8)} - {selected.nombreCliente}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-on-surface-variant/60">Estado Actual:</span>
+                                <span className="font-bold text-error uppercase tracking-wider bg-error/10 px-2 py-0.5 rounded-lg text-[10px]">{selected.estado}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-on-surface-variant/60">Abogados:</span>
+                                <span className="font-bold text-on-surface">{selected.abogadosAsignados || "—"}</span>
+                            </div>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
+            {openEmail && (
+                <Modal 
+                    open={openEmail} 
+                    onClose={() => setOpenEmail(false)} 
+                    title="Enviar por Correo" 
+                    footer={
+                        <Button onClick={sendEmailManual} disabled={busy}>
+                            {busy ? "Enviando..." : "Enviar Correo"}
+                        </Button>
+                    }
+                >
+                    <div className="space-y-4">
+                        <div className="flex flex-wrap gap-2 mb-2">
+                            <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mr-2 flex items-center">Agregar rápidos:</span>
+                            {selected.emailLiquidador && (
+                                <button onClick={() => setEmailForm(p => ({ ...p, destinatarios: p.destinatarios ? p.destinatarios + `, ${selected.emailLiquidador}` : selected.emailLiquidador }))} className="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-lg hover:bg-primary/20 transition-colors">+ Liquidador</button>
+                            )}
+                            {selected.asesor?.email && (
+                                <button onClick={() => setEmailForm(p => ({ ...p, destinatarios: p.destinatarios ? p.destinatarios + `, ${selected.asesor.email}` : selected.asesor.email }))} className="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-lg hover:bg-primary/20 transition-colors">+ Asesor</button>
+                            )}
+                            {selected.emailCliente && (
+                                <button onClick={() => setEmailForm(p => ({ ...p, destinatarios: p.destinatarios ? p.destinatarios + `, ${selected.emailCliente}` : selected.emailCliente }))} className="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-lg hover:bg-primary/20 transition-colors">+ Cliente</button>
+                            )}
+                            {selected.inspector?.email && (
+                                <button onClick={() => setEmailForm(p => ({ ...p, destinatarios: p.destinatarios ? p.destinatarios + `, ${selected.inspector.email}` : selected.inspector.email }))} className="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-lg hover:bg-primary/20 transition-colors">+ Inspector</button>
+                            )}
+                        </div>
+                        <Input label="Destinatarios (separados por coma)" value={emailForm.destinatarios} onChange={v => setEmailForm(p => ({ ...p, destinatarios: v }))} />
+                        <Input label="CC (separados por coma)" value={emailForm.cc} onChange={v => setEmailForm(p => ({ ...p, cc: v }))} />
+                        <Input label="Asunto" value={emailForm.asunto} onChange={v => setEmailForm(p => ({ ...p, asunto: v }))} />
+                        <Textarea label="Mensaje" value={emailForm.mensaje} onChange={v => setEmailForm(p => ({ ...p, mensaje: v }))} rows={4} />
+                        
+                        <div className="mt-4 border-t border-outline-variant/20 pt-4">
+                            <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant mb-3 block">Archivos del Expediente (Pre-adjuntar)</span>
+                            
+                            {selected.documentos && selected.documentos.length > 0 ? (
+                                <div className="max-h-48 overflow-y-auto space-y-2 mb-4 pr-1 custom-scrollbar">
+                                    {selected.documentos.map((doc) => {
+                                        const isSelected = emailForm.adjuntosPath?.includes(doc.urlArchivo);
+                                        return (
+                                            <div 
+                                                key={doc.id} 
+                                                onClick={() => {
+                                                    setEmailForm(p => {
+                                                        const current = p.adjuntosPath || [];
+                                                        const next = current.includes(doc.urlArchivo)
+                                                            ? current.filter(x => x !== doc.urlArchivo)
+                                                            : [...current, doc.urlArchivo];
+                                                        return { ...p, adjuntosPath: next };
+                                                    });
+                                                }}
+                                                className={cls(
+                                                    "flex items-center justify-between p-3 rounded-xl border transition cursor-pointer text-left",
+                                                    isSelected 
+                                                        ? "bg-primary/5 border-primary text-primary" 
+                                                        : "bg-surface-container-low border-outline-variant/10 hover:bg-surface-container-high text-on-surface"
+                                                )}
+                                            >
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <span className="material-symbols-outlined text-lg shrink-0">
+                                                        {isSelected ? "check_box" : "check_box_outline_blank"}
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <p className="text-[10px] font-black uppercase tracking-wider truncate">
+                                                            {TipoDocumentoLabel[doc.tipo] || doc.tipo}
+                                                        </p>
+                                                        <p className="text-[9px] font-bold opacity-60 truncate">
+                                                            {doc.titulo || "Sin título"}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <span className="material-symbols-outlined text-base opacity-40 shrink-0">attachment</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <p className="text-[10px] font-bold text-on-surface-variant/40 uppercase tracking-widest mb-3">No hay archivos en el expediente</p>
+                            )}
+
+                            <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant mb-2 block">Archivos adicionales desde tu PC</span>
+                            <label className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-outline-variant/30 px-6 py-6 transition cursor-pointer bg-surface-container-lowest hover:border-primary/40 hover:bg-primary/5">
+                                <input
+                                    type="file"
+                                    multiple
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        setEmailForm((p) => ({ ...p, files: e.target.files }));
+                                    }}
+                                />
+                                <span className="material-symbols-outlined text-3xl mb-2 text-primary/40">cloud_upload</span>
+                                <span className="text-xs font-bold text-on-surface text-center">
+                                    {emailForm.files && emailForm.files.length > 0
+                                        ? `${emailForm.files.length} archivo(s) seleccionado(s)`
+                                        : "Seleccionar archivos locales"}
+                                </span>
+                            </label>
+                            {emailForm.files && emailForm.files.length > 0 && (
+                                <div className="mt-2 space-y-1">
+                                    {Array.from(emailForm.files).map((f, i) => (
+                                        <div key={i} className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1">
+                                            <span className="material-symbols-outlined text-[12px]">description</span> {f.name} ({(f.size/1024).toFixed(1)} KB)
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </Modal>

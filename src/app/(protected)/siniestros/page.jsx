@@ -23,7 +23,7 @@ const EstadoSiniestroLabel = {
   CERRADO: "Cerrado",
   INSPECCION: "Liquidación - Inspección",
   PRESUPUESTO: "Liquidación - Presupuesto",
-  ENVIO_INFORMACION: "Liquidación - Envío de Información",
+  ENVIO_INFORMACION: "Liquidación - Antecedentes Liquidador",
   RECEPCION_PROPUESTA: "Liquidación - Propuesta Liquidador",
   APROBADA: "Propuesta Aprobada",
   DESCONFORME: "Propuesta Desconforme",
@@ -63,6 +63,7 @@ export default function SiniestrosPage() {
   const [estadoFilter, setEstadoFilter] = useState("ALL");
   const [origenFilter, setOrigenFilter] = useState("ALL");
   const [asesorFilter, setAsesorFilter] = useState("ALL");
+  const [flagFilter, setFlagFilter] = useState("ALL");
   const [asesores, setAsesores] = useState([]);
 
   // ✅ filtro etapa (abiertos / cerrados)
@@ -82,6 +83,7 @@ export default function SiniestrosPage() {
       if (estadoFilter !== "ALL") p.append("estado", estadoFilter);
       if (origenFilter !== "ALL") p.append("origen", origenFilter);
       if (asesorFilter !== "ALL") p.append("asesorId", asesorFilter);
+      if (flagFilter !== "ALL") p.append("flag", flagFilter);
 
       const res = await apiGet(`/siniestros?${p.toString()}`);
       if (res && res.data) {
@@ -102,7 +104,7 @@ export default function SiniestrosPage() {
       refresh(query);
     }, 400);
     return () => clearTimeout(handler);
-  }, [query, pagina, limite, stageTab, tipoFilter, estadoFilter, origenFilter, asesorFilter]);
+  }, [query, pagina, limite, stageTab, tipoFilter, estadoFilter, origenFilter, asesorFilter, flagFilter]);
 
   useEffect(() => {
     async function loadAsesores() {
@@ -118,7 +120,7 @@ export default function SiniestrosPage() {
 
   useEffect(() => {
     setPagina(1);
-  }, [stageTab, tipoFilter, estadoFilter, origenFilter]);
+  }, [stageTab, tipoFilter, estadoFilter, origenFilter, flagFilter, asesorFilter]);
 
   // Sync from URL
   useEffect(() => {
@@ -126,11 +128,15 @@ export default function SiniestrosPage() {
     const estado = searchParams.get("estado");
     const ramo = searchParams.get("ramo") || searchParams.get("tipo");
     const origen = searchParams.get("origen");
+    const flag = searchParams.get("flag");
+    const asesorId = searchParams.get("asesorId");
 
     if (modo) setStageTab(modo.toUpperCase());
     if (estado) setEstadoFilter(estado.toUpperCase());
     if (ramo) setTipoFilter(ramo.toUpperCase());
     if (origen) setOrigenFilter(origen.toUpperCase());
+    if (flag) setFlagFilter(flag.toUpperCase());
+    if (asesorId) setAsesorFilter(asesorId);
   }, [searchParams]);
 
   const exportExcel = async () => {
@@ -268,9 +274,10 @@ export default function SiniestrosPage() {
               onChange={setEstadoFilter}
               options={[
                 { value: "ALL", label: "Todos" },
+                { value: "AUTORIZADO", label: "Liq. - Autorizado" },
                 { value: "INSPECCION", label: "Liq. - Inspección" },
                 { value: "PRESUPUESTO", label: "Liq. - Presupuesto" },
-                { value: "ENVIO_INFORMACION", label: "Liq. - Envío Info" },
+                { value: "ENVIO_INFORMACION", label: "Liq. - Antecedentes Liquidador" },
                 { value: "RECEPCION_PROPUESTA", label: "Propuesta Liq." },
                 { value: "INFORME_FINAL", label: "Liq. - Informe Final" },
                 { value: "COBRANZA", label: "Cobranza" },
@@ -309,6 +316,23 @@ export default function SiniestrosPage() {
       </div>
 
       <div className="mt-8">
+        {flagFilter !== "ALL" && (
+          <div className="mb-6 flex items-center gap-3 bg-primary/10 text-primary border border-primary/20 rounded-2xl px-5 py-3 text-xs font-bold animate-fadeIn">
+            <span className="material-symbols-outlined">filter_alt</span>
+            <span>
+              Filtrando por: Impugnaciones Activas
+            </span>
+            <button 
+              onClick={() => {
+                setFlagFilter("ALL");
+                router.replace("/siniestros");
+              }} 
+              className="ml-auto bg-primary/20 hover:bg-primary/30 text-primary rounded-full px-3 py-1 transition-all cursor-pointer"
+            >
+              Quitar filtro
+            </button>
+          </div>
+        )}
         {loading && casos.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 grayscale opacity-40">
             <div className="material-symbols-outlined text-6xl animate-pulse">database</div>

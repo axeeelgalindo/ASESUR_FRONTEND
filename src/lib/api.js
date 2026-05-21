@@ -27,9 +27,33 @@ const api = axios.create({
   withCredentials: true,
 });
 
+// Evita que peticiones concurrentes/paralelas o secuenciales gatillen múltiples llamadas simultáneas a NextAuth getSession()
+let cachedSession = null;
+let currentSessionPromise = null;
+
+async function getDeduplicatedSession() {
+  if (cachedSession) {
+    return cachedSession;
+  }
+  if (currentSessionPromise) {
+    return currentSessionPromise;
+  }
+  currentSessionPromise = getSession();
+  try {
+    const session = await currentSessionPromise;
+    if (session) {
+      cachedSession = session;
+    }
+    return session;
+  } finally {
+    currentSessionPromise = null;
+  }
+}
+
+
 // Inyecta Bearer token desde NextAuth (session.backendToken)
 api.interceptors.request.use(async (config) => {
-  const session = await getSession();
+  const session = await getDeduplicatedSession();
   const token = session?.backendToken;
 
   if (token) {
@@ -39,6 +63,7 @@ api.interceptors.request.use(async (config) => {
 
   return config;
 });
+
 
 // Helpers HTTP
 export async function apiGet(path, config = {}) {

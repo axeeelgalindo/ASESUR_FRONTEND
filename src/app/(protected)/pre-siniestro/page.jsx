@@ -22,8 +22,11 @@ const COMPANIAS_SEGURO = [
   { value: "Consorcio", label: "Consorcio" },
   { value: "Chilena Consolidada", label: "Chilena Consolidada" },
   { value: "Mapfre", label: "Mapfre" },
+  { value: "HDI", label: "HDI" },
   { value: "Otra", label: "Otra..." },
 ];
+
+const COMPANIAS_BASICAS = COMPANIAS_SEGURO.filter(c => c.value !== "Otra").map(c => c.value);
 
 const EstadoCasoLabel = {
   ABIERTO: "Abierto",
@@ -135,6 +138,7 @@ export default function PreSiniestroPage() {
   const [openAuth, setOpenAuth] = useState(false); // Modal para autorizar
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState(null);
+  const [createdCasoSuccess, setCreatedCasoSuccess] = useState(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const handleOpenCreate = () => {
     setCreateError(null);
@@ -151,6 +155,13 @@ export default function PreSiniestroPage() {
     numeroSiniestro: "",
     esCasoAsesur: true,
     asesorId: "",
+    banco: "",
+    emailCliente: "",
+    telefonoCliente1: "",
+    numeroDocumentoCI: "",
+    antiguedadEdificio: "",
+    m2ViviendaTotal: "",
+    fechaOcurrencia: "",
     archivos: {
       INSPECCION_ASESUR: [],
       FOTOS_VIDEOS: [],
@@ -158,6 +169,17 @@ export default function PreSiniestroPage() {
       CONTRATO_ASESORIA: [],
       DENUNCIA_SINIESTRO_CORREO: [],
       ASIGNACION_FORMAL_CORREO: [],
+    },
+    fotos: {
+      FACHADA: [],
+      LIVING_COMEDOR: [],
+      COCINA: [],
+      DORMITORIO_PRINCIPAL: [],
+      DORMITORIO_SECUNDARIO: [],
+      BANO: [],
+      TECHUMBRE: [],
+      PATIO: [],
+      OTRO: [],
     },
   });
 
@@ -395,9 +417,19 @@ export default function PreSiniestroPage() {
   };
 
   const createCaso = async () => {
+    console.log("[createCaso] Iniciando creación de caso...");
     setCreateError(null);
+    setCreatedCasoSuccess(null);
     setCreateBusy(true);
     try {
+      if (isAsesor) {
+        const totalPhotos = Object.values(newCaso.fotos).reduce((sum, list) => sum + (list?.length || 0), 0);
+        console.log("[createCaso] Total de fotos seleccionadas por Asesor:", totalPhotos);
+        if (totalPhotos === 0) {
+          throw new Error("Debes subir al menos una foto en general");
+        }
+      }
+
       const payload = {
         tipo: newCaso.tipo,
         nombreCliente: newCaso.nombreCliente.trim(),
@@ -408,60 +440,118 @@ export default function PreSiniestroPage() {
         esCasoAsesur: newCaso.esCasoAsesur,
         // Si es asesor, el backend lo auto-asigna. Si no, pasamos el asesorId elegido.
         ...(newCaso.asesorId ? { asesorId: newCaso.asesorId } : {}),
+        ...(isAsesor ? {
+          banco: newCaso.banco?.trim() || null,
+          emailCliente: newCaso.emailCliente?.trim() || null,
+          telefonoCliente1: newCaso.telefonoCliente1?.trim() || null,
+          numeroDocumentoCI: newCaso.numeroDocumentoCI?.trim() || null,
+          antiguedadEdificio: newCaso.antiguedadEdificio ? parseInt(newCaso.antiguedadEdificio, 10) : null,
+          m2ViviendaTotal: newCaso.m2ViviendaTotal ? parseFloat(newCaso.m2ViviendaTotal) : null,
+          fechaOcurrencia: newCaso.fechaOcurrencia ? new Date(newCaso.fechaOcurrencia).toISOString() : null,
+        } : {})
       };
+
+      console.log("[createCaso] Validando datos mínimos...");
       if (!payload.nombreCliente || !payload.rutCliente || !payload.direccion) {
         throw new Error("Completa nombre, RUT y dirección");
       }
       if (!validateRut(payload.rutCliente)) {
         throw new Error("El RUT ingresado no es válido");
       }
+
+      console.log("[createCaso] Enviando POST a /pre-siniestro/create...", payload);
       const created = await apiPost("/pre-siniestro/create", payload);
-      console.log("[createCaso] respuesta del servidor:", created);
+      console.log("[createCaso] Respuesta de creación recibida con éxito:", created);
+
       // El backend retorna el caso directamente: { id, folio, etapa, ... }
       const newCasoId = created?.id || created?.data?.id;
-
       if (!newCasoId) {
         throw new Error(`No se obtuvo el ID del caso creado. Respuesta: ${JSON.stringify(created)}`);
       }
 
-      // Update insurance data if provided (no bloqueante)
-      if (newCaso.companiaSeguro?.trim() || newCaso.numeroSiniestro?.trim()) {
+      // Update insurance data if provided (no bloqueante, solo si no es asesor)
+      if (!isAsesor && (newCaso.companiaSeguro?.trim() || newCaso.numeroSiniestro?.trim())) {
+        console.log("[createCaso] Guardando datos complementarios de seguro...");
         try {
           await apiPatch(`/pre-siniestro/${newCasoId}/datos`, {
             companiaSeguro: newCaso.companiaSeguro?.trim() || "",
             numeroSiniestro: newCaso.numeroSiniestro?.trim() || "",
           });
+          console.log("[createCaso] Datos complementarios guardados.");
         } catch (patchErr) {
           console.error("Error guardando datos del siniestro:", patchErr?.response?.data || patchErr?.message);
         }
       }
 
-      // Upload files — subida individual para no cortar el flujo si uno falla
-      const fileTypes = [
-        "INSPECCION_ASESUR",
-        "FOTOS_VIDEOS",
-        "MANDATO_ASESORIA_NOTARIAL",
-        "CONTRATO_ASESORIA",
-        "DENUNCIA_SINIESTRO_CORREO",
-        "ASIGNACION_FORMAL_CORREO",
-      ];
-      for (const tipo of fileTypes) {
-        const files = newCaso.archivos[tipo];
-        if (files && files.length > 0) {
-          for (const file of files) {
-            try {
-              const fd = new FormData();
-              fd.append("tipo", tipo);
-              fd.append("titulo", file.name);
-              fd.append("file", file);
-              await apiPostForm(`/pre-siniestro/${newCasoId}/documentos`, fd);
-            } catch (uploadErr) {
-              console.error(`Error subiendo archivo ${tipo}:`, uploadErr?.response?.data || uploadErr?.message);
+      // Upload files — subida individual con acumulación de errores para retroalimentación visual
+      if (isAsesor) {
+        console.log("[createCaso] Iniciando subida de fotos por sector...");
+        const parts = Object.keys(newCaso.fotos);
+        const uploadErrors = [];
+        for (const partKey of parts) {
+          const items = newCaso.fotos[partKey];
+          if (items && items.length > 0) {
+            console.log(`[createCaso] Subiendo ${items.length} fotos para el sector: ${partKey}`);
+            for (const item of items) {
+              try {
+                const fd = new FormData();
+                fd.append("parteCasa", partKey);
+                fd.append("titulo", item.comment?.trim() || item.file.name);
+                fd.append("file", item.file);
+                console.log(`[createCaso] Subiendo foto "${item.file.name}"...`);
+                const uploadRes = await apiPostForm(`/casos/${newCasoId}/fotos`, fd);
+                console.log(`[createCaso] Foto "${item.file.name}" subida con éxito:`, uploadRes);
+              } catch (uploadErr) {
+                const errDetail = uploadErr?.response?.data?.message || uploadErr?.response?.data?.error || uploadErr?.message || "Error de red/servidor";
+                console.error(`Error subiendo foto de ${partKey}:`, errDetail);
+                uploadErrors.push(`[${partKey}] ${item.file.name}: ${errDetail}`);
+              }
             }
           }
         }
+        console.log("[createCaso] Finalizada la subida de fotos por sector.");
+        if (uploadErrors.length > 0) {
+          throw new Error(`Se creó el caso (Folio ${created?.folio || created?.data?.folio || "OK"}) pero falló la subida de las fotos: ${uploadErrors.join(", ")}`);
+        }
+      } else {
+        console.log("[createCaso] Iniciando subida de archivos tradicionales...");
+        const fileTypes = [
+          "INSPECCION_ASESUR",
+          "FOTOS_VIDEOS",
+          "MANDATO_ASESORIA_NOTARIAL",
+          "CONTRATO_ASESORIA",
+          "DENUNCIA_SINIESTRO_CORREO",
+          "ASIGNACION_FORMAL_CORREO",
+        ];
+        const uploadErrors = [];
+        for (const tipo of fileTypes) {
+          const files = newCaso.archivos[tipo];
+          if (files && files.length > 0) {
+            console.log(`[createCaso] Subiendo ${files.length} archivos de tipo: ${tipo}`);
+            for (const file of files) {
+              try {
+                const fd = new FormData();
+                fd.append("tipo", tipo);
+                fd.append("titulo", file.name);
+                fd.append("file", file);
+                console.log(`[createCaso] Subiendo archivo "${file.name}"...`);
+                const uploadRes = await apiPostForm(`/pre-siniestro/${newCasoId}/documentos`, fd);
+                console.log(`[createCaso] Archivo "${file.name}" subido con éxito:`, uploadRes);
+              } catch (uploadErr) {
+                const errDetail = uploadErr?.response?.data?.message || uploadErr?.response?.data?.error || uploadErr?.message || "Error de red/servidor";
+                console.error(`Error subiendo archivo ${tipo}:`, errDetail);
+                uploadErrors.push(`[${tipo}] ${file.name}: ${errDetail}`);
+              }
+            }
+          }
+        }
+        console.log("[createCaso] Finalizada la subida de archivos tradicionales.");
+        if (uploadErrors.length > 0) {
+          throw new Error(`Se creó el caso (Folio ${created?.folio || created?.data?.folio || "OK"}) pero falló la subida de documentos: ${uploadErrors.join(", ")}`);
+        }
       }
 
+      console.log("[createCaso] Limpiando formulario, cerrando modal y refrescando lista...");
       setOpenCreate(false);
       setNewCaso({
         tipo: "HIPOTECARIO_A",
@@ -474,6 +564,13 @@ export default function PreSiniestroPage() {
         numeroSiniestro: "",
         esCasoAsesur: true,
         asesorId: "",
+        banco: "",
+        emailCliente: "",
+        telefonoCliente1: "",
+        numeroDocumentoCI: "",
+        antiguedadEdificio: "",
+        m2ViviendaTotal: "",
+        fechaOcurrencia: "",
         archivos: {
           INSPECCION_ASESUR: [],
           FOTOS_VIDEOS: [],
@@ -482,10 +579,27 @@ export default function PreSiniestroPage() {
           DENUNCIA_SINIESTRO_CORREO: [],
           ASIGNACION_FORMAL_CORREO: [],
         },
+        fotos: {
+          FACHADA: [],
+          LIVING_COMEDOR: [],
+          COCINA: [],
+          DORMITORIO_PRINCIPAL: [],
+          DORMITORIO_SECUNDARIO: [],
+          BANO: [],
+          TECHUMBRE: [],
+          PATIO: [],
+          OTRO: [],
+        },
       });
+
+      // Establecer el caso creado exitosamente para mostrar el banner de éxito
+      setCreatedCasoSuccess(created);
+
+      console.log("[createCaso] Ejecutando refresh() para actualizar el listado principal...");
       await refresh();
+      console.log("[createCaso] ¡Todo el flujo de creación finalizó exitosamente!");
     } catch (e) {
-      console.error("[createCaso] error:", e);
+      console.error("[createCaso] Ocurrió un error en el flujo de creación:", e);
       setCreateError(e?.response?.data?.error || e?.message || "Error creando caso");
     } finally {
       setCreateBusy(false);
@@ -875,6 +989,24 @@ export default function PreSiniestroPage() {
       </div>
 
       <div className="p-4 md:p-8">
+        {createdCasoSuccess && (
+          <div className="mb-6 flex flex-col gap-2 rounded-2xl border border-green-500/20 bg-green-500/10 p-4 animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center gap-3 text-green-700 dark:text-green-400 font-bold text-sm">
+              <span className="material-symbols-outlined text-green-600 text-lg">check_circle</span>
+              <span>¡Pre-Siniestro creado con éxito! (Folio {createdCasoSuccess.folio || createdCasoSuccess.data?.folio})</span>
+            </div>
+            <p className="text-xs text-on-surface-variant leading-relaxed">
+              El caso ha sido registrado correctamente y se encuentra visible en el listado principal de <strong>Pre-Siniestros</strong>.
+            </p>
+            <button 
+              onClick={() => setCreatedCasoSuccess(null)}
+              className="mt-2 self-start text-[11px] font-bold text-green-600 hover:text-green-700 underline"
+            >
+              Entendido
+            </button>
+          </div>
+        )}
+
         {error && (
           <div className="mb-6 flex items-center gap-3 rounded-2xl border border-error/20 bg-error-container/30 p-4 text-sm font-bold text-on-error-container animate-in fade-in slide-in-from-top-2">
             <span className="material-symbols-outlined">error</span>
@@ -1191,41 +1323,106 @@ export default function PreSiniestroPage() {
               onChange={(v) => setNewCaso((p) => ({ ...p, esCasoAsesur: v }))}
             />
           </div>
-          <div className="md:col-span-2 grid gap-6 md:grid-cols-2">
-            <div className="flex flex-col gap-2">
-              <Select
-                label="Compañía de Seguros *"
-                options={COMPANIAS_SEGURO}
-                value={["BCI", "Sura", "Consorcio", "Chilena Consolidada", "Mapfre", "HDI"].includes(newCaso.companiaSeguro) ? newCaso.companiaSeguro : (newCaso.companiaSeguro ? "Otra" : "")}
-                onChange={(v) => {
-                  if (v === "Otra") setNewCaso(p => ({ ...p, companiaSeguro: " " }));
-                  else setNewCaso(p => ({ ...p, companiaSeguro: v }));
-                }}
-              />
-              {!["", "BCI", "Sura", "Consorcio", "Chilena Consolidada", "Mapfre"].includes(newCaso.companiaSeguro) && newCaso.companiaSeguro !== undefined && (
-                <Input
-                  placeholder="Escribe el nombre de la compañía"
-                  value={newCaso.companiaSeguro.trim() === "" ? "" : newCaso.companiaSeguro}
-                  onChange={(v) => setNewCaso(p => ({ ...p, companiaSeguro: v }))}
+
+          {/* Si NO es asesor, mostrar Compañía de Seguros y Nº de Siniestro */}
+          {!isAsesor ? (
+            <div className="md:col-span-2 grid gap-6 md:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <Select
+                  label="Compañía de Seguros *"
+                  options={COMPANIAS_SEGURO}
+                  value={COMPANIAS_BASICAS.includes(newCaso.companiaSeguro) ? newCaso.companiaSeguro : (newCaso.companiaSeguro ? "Otra" : "")}
+                  onChange={(v) => {
+                    if (v === "Otra") setNewCaso(p => ({ ...p, companiaSeguro: " " }));
+                    else setNewCaso(p => ({ ...p, companiaSeguro: v }));
+                  }}
                 />
-              )}
+                {!COMPANIAS_BASICAS.includes(newCaso.companiaSeguro) && newCaso.companiaSeguro !== undefined && newCaso.companiaSeguro !== "" && (
+                  <Input
+                    placeholder="Escribe el nombre de la compañía"
+                    value={newCaso.companiaSeguro.trim() === "" ? "" : newCaso.companiaSeguro}
+                    onChange={(v) => setNewCaso(p => ({ ...p, companiaSeguro: v }))}
+                  />
+                )}
+              </div>
+              <Input
+                label="Nº de Siniestro *"
+                value={newCaso.numeroSiniestro}
+                onChange={(v) => setNewCaso((p) => ({ ...p, numeroSiniestro: v }))}
+                placeholder="Ej: 987654321"
+              />
             </div>
-            <Input
-              label="Nº de Siniestro *"
-              value={newCaso.numeroSiniestro}
-              onChange={(v) => setNewCaso((p) => ({ ...p, numeroSiniestro: v }))}
-              placeholder="Ej: 987654321"
-            />
-          </div>
+          ) : (
+            /* Si es asesor, mostrar campos de captación móvil */
+            <>
+              <div>
+                <Select
+                  label="Tipo de Siniestro *"
+                  options={[
+                    { value: "HIPOTECARIO_A", label: "Hipotecario" },
+                    { value: "POLIZA_PARTICULAR_B", label: "Póliza Particular" },
+                  ]}
+                  value={newCaso.tipo}
+                  onChange={(v) => setNewCaso((p) => ({ ...p, tipo: v }))}
+                />
+              </div>
+              <Input
+                label="Banco Acreedor"
+                value={newCaso.banco}
+                onChange={(v) => setNewCaso((p) => ({ ...p, banco: v }))}
+                placeholder="Ej: Banco Estado, Santander..."
+              />
+              <Input
+                label="Fecha de Ocurrencia"
+                type="date"
+                value={newCaso.fechaOcurrencia}
+                onChange={(v) => setNewCaso((p) => ({ ...p, fechaOcurrencia: v }))}
+              />
+              <Input
+                label="Antigüedad del Edificio (años)"
+                type="number"
+                value={newCaso.antiguedadEdificio}
+                onChange={(v) => setNewCaso((p) => ({ ...p, antiguedadEdificio: v }))}
+                placeholder="Ej: 5"
+              />
+              <Input
+                label="Superficie Construida (m²)"
+                type="number"
+                value={newCaso.m2ViviendaTotal}
+                onChange={(v) => setNewCaso((p) => ({ ...p, m2ViviendaTotal: v }))}
+                placeholder="Ej: 75"
+              />
+              <Input
+                label="Email Cliente"
+                type="email"
+                value={newCaso.emailCliente}
+                onChange={(v) => setNewCaso((p) => ({ ...p, emailCliente: v }))}
+                placeholder="cliente@correo.com"
+              />
+              <Input
+                label="Teléfono Principal"
+                value={newCaso.telefonoCliente1}
+                onChange={(v) => setNewCaso((p) => ({ ...p, telefonoCliente1: v }))}
+                placeholder="Ej: +56912345678"
+              />
+              <Input
+                label="Documento C.I. (Número de Serie)"
+                value={newCaso.numeroDocumentoCI}
+                onChange={(v) => setNewCaso((p) => ({ ...p, numeroDocumentoCI: v }))}
+                placeholder="Ej: 123456789"
+              />
+            </>
+          )}
+
           <Input
-            label="RUT Cliente"
+            label="RUT Cliente *"
             value={newCaso.rutCliente}
             onChange={(v) => setNewCaso((p) => ({ ...p, rutCliente: formatRut(v) }))}
             placeholder="12.345.678-9"
           />
           <div className="md:col-span-2">
             <Input
-              label="Nombre Cliente"
+              label="Nombre Cliente *"
               value={newCaso.nombreCliente}
               onChange={(v) => setNewCaso((p) => ({ ...p, nombreCliente: v }))}
               placeholder="Nombre completo"
@@ -1248,12 +1445,13 @@ export default function PreSiniestroPage() {
           </div>
           <div className="md:col-span-2">
             <Input
-              label="Dirección"
+              label="Dirección *"
               value={newCaso.direccion}
               onChange={(v) => setNewCaso((p) => ({ ...p, direccion: v }))}
               placeholder="Calle, número, depto..."
             />
           </div>
+
           {/* Selector de asesor: ASESOR se asigna solo, OPS/MASTER eligen */}
           <div className="md:col-span-2">
             {isAsesor ? (
@@ -1282,84 +1480,229 @@ export default function PreSiniestroPage() {
               </div>
             )}
           </div>
-          <div className="md:col-span-2 rounded-2xl border border-outline-variant/10 bg-surface-container-lowest overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center gap-2 px-5 py-4 border-b border-outline-variant/10">
-              <span className="material-symbols-outlined text-primary text-lg">upload_file</span>
-              <h3 className="text-sm font-black text-on-surface uppercase tracking-widest">Documentos del Caso</h3>
-            </div>
 
-            {/* Lista de documentos */}
-            <div className="divide-y divide-outline-variant/10">
-              {[
-                { key: "INSPECCION_ASESUR", icon: "find_in_page", label: "Informe de Inspección ASESUR", multiple: false, req: true },
-                { key: "FOTOS_VIDEOS", icon: "photo_library", label: "Fotos y Videos", multiple: true, req: true },
-                { key: "MANDATO_ASESORIA_NOTARIAL", icon: "gavel", label: "Mandato Asesoría Notarial", multiple: false, req: true },
-                { key: "CONTRATO_ASESORIA", icon: "description", label: "Contrato de Asesoría", multiple: false, req: true },
-                { key: "DENUNCIA_SINIESTRO_CORREO", icon: "mark_email_read", label: "Correo Denuncia Siniestro", multiple: false, req: true },
-                { key: "ASIGNACION_FORMAL_CORREO", icon: "forward_to_inbox", label: "Correo Asignación Formal Liq.", multiple: false, req: true },
-              ].map(({ key, icon, label, multiple, req }) => {
-                const files = newCaso.archivos[key] || [];
-                const hasFiles = files.length > 0;
-                return (
-                  <label
-                    key={key}
-                    className={cls(
-                      "flex items-center gap-4 px-5 py-3.5 cursor-pointer transition-colors",
-                      hasFiles
-                        ? "bg-green-500/5 hover:bg-green-500/10"
-                        : "hover:bg-surface-container"
-                    )}
-                  >
-                    {/* Ícono estado */}
-                    <span className={cls(
-                      "material-symbols-outlined text-xl flex-shrink-0",
-                      hasFiles ? "text-green-500" : "text-on-surface-variant/40"
-                    )}>
-                      {hasFiles ? "check_circle" : icon}
-                    </span>
+          {/* Carga de archivos por rol */}
+          {isAsesor ? (
+            /* Asesor: Cargar fotos por lugar */
+            <div className="md:col-span-2 rounded-2xl border border-outline-variant/10 bg-surface-container-lowest overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-outline-variant/10">
+                <span className="material-symbols-outlined text-primary text-lg">photo_camera</span>
+                <h3 className="text-sm font-black text-on-surface uppercase tracking-widest">Fotos del Siniestro por Lugar *</h3>
+              </div>
 
-                    {/* Texto */}
-                    <div className="flex-1 min-w-0">
-                      <p className={cls(
-                        "text-sm font-semibold truncate",
-                        hasFiles ? "text-green-600" : "text-on-surface"
-                      )}>
-                        {label}
-                        {req && <span className="ml-1 text-red-500">*</span>}
-                      </p>
-                      <p className="text-[11px] text-on-surface-variant/50 truncate mt-0.5">
-                        {hasFiles
-                          ? `${files.length} archivo${files.length > 1 ? "s" : ""} seleccionado${files.length > 1 ? "s" : ""}`
-                          : multiple ? "Haz clic para seleccionar archivos" : "Haz clic para seleccionar archivo"}
-                      </p>
+              {/* Lista de partes de la casa */}
+              <div className="divide-y divide-outline-variant/10">
+                {[
+                  { key: "FACHADA", label: "Fachada", icon: "home" },
+                  { key: "LIVING_COMEDOR", label: "Living / Comedor", icon: "chair" },
+                  { key: "COCINA", label: "Cocina", icon: "soup_kitchen" },
+                  { key: "DORMITORIO_PRINCIPAL", label: "Dormitorio Principal", icon: "bed" },
+                  { key: "DORMITORIO_SECUNDARIO", label: "Dormitorio Secundario", icon: "single_bed" },
+                  { key: "BANO", label: "Baño", icon: "bathtub" },
+                  { key: "TECHUMBRE", label: "Techumbre", icon: "roofing" },
+                  { key: "PATIO", label: "Patio / Exterior", icon: "deck" },
+                  { key: "OTRO", label: "Otros Daños / Evidencia", icon: "more_horiz" },
+                ].map(({ key, label, icon }) => {
+                  const files = newCaso.fotos[key] || [];
+                  const hasFiles = files.length > 0;
+                  return (
+                    <div key={key} className="flex flex-col border-b border-outline-variant/10 last:border-b-0">
+                      {/* Fila principal del sector */}
+                      <label
+                        className={cls(
+                          "flex items-center gap-4 px-5 py-3.5 cursor-pointer transition-colors hover:bg-surface-container/50",
+                          hasFiles && "bg-green-500/[0.02]"
+                        )}
+                      >
+                        {/* Ícono de sector */}
+                        <span className={cls(
+                          "material-symbols-outlined text-xl flex-shrink-0",
+                          hasFiles ? "text-green-500" : "text-on-surface-variant/40"
+                        )}>
+                          {hasFiles ? "check_circle" : icon}
+                        </span>
+
+                        {/* Texto */}
+                        <div className="flex-1 min-w-0">
+                          <p className={cls(
+                            "text-sm font-semibold truncate",
+                            hasFiles ? "text-green-600" : "text-on-surface"
+                          )}>
+                            {label}
+                          </p>
+                          <p className="text-[11px] text-on-surface-variant/50 truncate mt-0.5">
+                            {hasFiles
+                              ? `${files.length} foto${files.length > 1 ? "s" : ""} seleccionada${files.length > 1 ? "s" : ""}`
+                              : "Haz clic para seleccionar fotos de este sector"}
+                          </p>
+                        </div>
+
+                        {/* Botón de selección */}
+                        <span className="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors">
+                          Añadir Fotos
+                        </span>
+
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={(e) => {
+                            const newFiles = Array.from(e.target.files || []);
+                            const newItems = newFiles.map(file => ({
+                              id: Math.random().toString(36).substr(2, 9),
+                              file,
+                              comment: ""
+                            }));
+                            setNewCaso(p => ({
+                              ...p,
+                              fotos: { ...p.fotos, [key]: [...(p.fotos[key] || []), ...newItems] }
+                            }));
+                          }}
+                        />
+                      </label>
+
+                      {/* Lista de fotos seleccionadas con input de comentario */}
+                      {hasFiles && (
+                        <div className="bg-surface-container-lowest/30 px-5 pb-4 pt-1 space-y-3">
+                          {files.map((item, idx) => (
+                            <div key={item.id} className="flex items-start gap-3 rounded-xl border border-outline-variant/10 bg-surface-container-low p-3">
+                              {/* Preview o ícono */}
+                              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-surface-container-highest text-on-surface-variant/70 overflow-hidden">
+                                <span className="material-symbols-outlined text-lg">image</span>
+                              </div>
+
+                              {/* Campos */}
+                              <div className="flex-1 min-w-0 space-y-1">
+                                <p className="text-[11px] font-bold text-on-surface-variant truncate">
+                                  {item.file.name}
+                                </p>
+                                <input
+                                  type="text"
+                                  placeholder="Escribe un comentario para esta foto..."
+                                  value={item.comment}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setNewCaso(p => {
+                                      const updatedList = [...(p.fotos[key] || [])];
+                                      updatedList[idx] = { ...updatedList[idx], comment: val };
+                                      return {
+                                        ...p,
+                                        fotos: { ...p.fotos, [key]: updatedList }
+                                      };
+                                    });
+                                  }}
+                                  className="w-full rounded-lg bg-surface-container border border-outline-variant/10 px-3 py-1.5 text-xs text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-1 focus:ring-primary"
+                                />
+                              </div>
+
+                              {/* Botón de eliminar foto */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNewCaso(p => {
+                                    const updatedList = (p.fotos[key] || []).filter(x => x.id !== item.id);
+                                    return {
+                                      ...p,
+                                      fotos: { ...p.fotos, [key]: updatedList }
+                                    };
+                                  });
+                                }}
+                                className="flex-shrink-0 text-on-surface-variant hover:text-red-500 transition-colors p-1"
+                              >
+                                <span className="material-symbols-outlined text-lg">delete</span>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-
-                    {/* Botón visual */}
-                    <span className={cls(
-                      "flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors",
-                      hasFiles
-                        ? "bg-green-500/10 text-green-600"
-                        : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
-                    )}>
-                      {hasFiles ? "Cambiar" : "Subir"}
-                    </span>
-
-                    {/* Input oculto */}
-                    <input
-                      type="file"
-                      multiple={multiple}
-                      className="sr-only"
-                      onChange={(e) => setNewCaso(p => ({
-                        ...p,
-                        archivos: { ...p.archivos, [key]: Array.from(e.target.files) }
-                      }))}
-                    />
-                  </label>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          ) : (
+            /* No Asesor: Cargar documentos tradicionales */
+            <div className="md:col-span-2 rounded-2xl border border-outline-variant/10 bg-surface-container-lowest overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-outline-variant/10">
+                <span className="material-symbols-outlined text-primary text-lg">upload_file</span>
+                <h3 className="text-sm font-black text-on-surface uppercase tracking-widest">Documentos del Caso</h3>
+              </div>
+
+              {/* Lista de documentos */}
+              <div className="divide-y divide-outline-variant/10">
+                {[
+                  { key: "INSPECCION_ASESUR", icon: "find_in_page", label: "Informe de Inspección ASESUR", multiple: false, req: true },
+                  { key: "FOTOS_VIDEOS", icon: "photo_library", label: "Fotos y Videos", multiple: true, req: true },
+                  { key: "MANDATO_ASESORIA_NOTARIAL", icon: "gavel", label: "Mandato Asesoría Notarial", multiple: false, req: true },
+                  { key: "CONTRATO_ASESORIA", icon: "description", label: "Contrato de Asesoría", multiple: false, req: true },
+                  { key: "DENUNCIA_SINIESTRO_CORREO", icon: "mark_email_read", label: "Correo Denuncia Siniestro", multiple: false, req: true },
+                  { key: "ASIGNACION_FORMAL_CORREO", icon: "forward_to_inbox", label: "Correo Asignación Formal Liq.", multiple: false, req: true },
+                ].map(({ key, icon, label, multiple, req }) => {
+                  const files = newCaso.archivos[key] || [];
+                  const hasFiles = files.length > 0;
+                  return (
+                    <label
+                      key={key}
+                      className={cls(
+                        "flex items-center gap-4 px-5 py-3.5 cursor-pointer transition-colors",
+                        hasFiles
+                          ? "bg-green-500/5 hover:bg-green-500/10"
+                          : "hover:bg-surface-container"
+                      )}
+                    >
+                      {/* Ícono estado */}
+                      <span className={cls(
+                        "material-symbols-outlined text-xl flex-shrink-0",
+                        hasFiles ? "text-green-500" : "text-on-surface-variant/40"
+                      )}>
+                        {hasFiles ? "check_circle" : icon}
+                      </span>
+
+                      {/* Texto */}
+                      <div className="flex-1 min-w-0">
+                        <p className={cls(
+                          "text-sm font-semibold truncate",
+                          hasFiles ? "text-green-600" : "text-on-surface"
+                        )}>
+                          {label}
+                          {req && <span className="ml-1 text-red-500">*</span>}
+                        </p>
+                        <p className="text-[11px] text-on-surface-variant/50 truncate mt-0.5">
+                          {hasFiles
+                            ? `${files.length} archivo${files.length > 1 ? "s" : ""} seleccionado${files.length > 1 ? "s" : ""}`
+                            : multiple ? "Haz clic para seleccionar archivos" : "Haz clic para seleccionar archivo"}
+                        </p>
+                      </div>
+
+                      {/* Botón visual */}
+                      <span className={cls(
+                        "flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors",
+                        hasFiles
+                          ? "bg-green-500/10 text-green-600"
+                          : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
+                      )}>
+                        {hasFiles ? "Cambiar" : "Subir"}
+                      </span>
+
+                      {/* Input oculto */}
+                      <input
+                        type="file"
+                        multiple={multiple}
+                        className="sr-only"
+                        onChange={(e) => setNewCaso(p => ({
+                          ...p,
+                          archivos: { ...p.archivos, [key]: Array.from(e.target.files) }
+                        }))}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
 
@@ -1754,13 +2097,31 @@ export default function PreSiniestroPage() {
                   </div>
                 </div>
 
-                {(selected.numeroDocumentoCI || selected.firmaNotarial || selected.fechaOcurrencia || selected.antiguedadEdificio || selected.m2ViviendaTotal) && (
+                {(selected.numeroDocumentoCI || selected.firmaNotarial || selected.fechaOcurrencia || selected.antiguedadEdificio || selected.m2ViviendaTotal || selected.banco || selected.emailCliente || selected.telefonoCliente1) && (
                   <div className="grid gap-4 sm:grid-cols-2 rounded-2xl border border-outline-variant/10 bg-surface-container-low p-5">
-                    <div className="col-span-full text-[10px] font-black uppercase tracking-wider text-on-surface-variant/50 mb-1">Datos Adicionales de Vivienda</div>
+                    <div className="col-span-full text-[10px] font-black uppercase tracking-wider text-on-surface-variant/50 mb-1">Datos Adicionales y de Vivienda</div>
                     {selected.numeroDocumentoCI && (
                       <div>
                         <div className="text-[10px] font-bold text-on-surface-variant/60 uppercase">N° Documento C.I.</div>
                         <div className="text-sm font-black">{selected.numeroDocumentoCI}</div>
+                      </div>
+                    )}
+                    {selected.banco && (
+                      <div>
+                        <div className="text-[10px] font-bold text-on-surface-variant/60 uppercase">Banco Acreedor</div>
+                        <div className="text-sm font-black">{selected.banco}</div>
+                      </div>
+                    )}
+                    {selected.emailCliente && (
+                      <div>
+                        <div className="text-[10px] font-bold text-on-surface-variant/60 uppercase">Email Cliente</div>
+                        <div className="text-sm font-black">{selected.emailCliente}</div>
+                      </div>
+                    )}
+                    {selected.telefonoCliente1 && (
+                      <div>
+                        <div className="text-[10px] font-bold text-on-surface-variant/60 uppercase">Teléfono Cliente</div>
+                        <div className="text-sm font-black">{selected.telefonoCliente1}</div>
                       </div>
                     )}
                     {selected.firmaNotarial && (
@@ -1883,14 +2244,14 @@ export default function PreSiniestroPage() {
                     <Select
                       label="Compañía de Seguros *"
                       options={COMPANIAS_SEGURO}
-                      value={["BCI", "Sura", "Consorcio", "Chilena Consolidada", "Mapfre", "HDI"].includes(datosForm.companiaSeguro) ? datosForm.companiaSeguro : (datosForm.companiaSeguro ? "Otra" : "")}
+                      value={COMPANIAS_BASICAS.includes(datosForm.companiaSeguro) ? datosForm.companiaSeguro : (datosForm.companiaSeguro ? "Otra" : "")}
                       onChange={(v) => {
                         if (v === "Otra") setDatosForm(p => ({ ...p, companiaSeguro: " " }));
                         else setDatosForm(p => ({ ...p, companiaSeguro: v }));
                       }}
                       disabled={!isOps}
                     />
-                    {!["", "BCI", "Sura", "Consorcio", "Chilena Consolidada", "Mapfre"].includes(datosForm.companiaSeguro) && datosForm.companiaSeguro !== undefined && (
+                    {!COMPANIAS_BASICAS.includes(datosForm.companiaSeguro) && datosForm.companiaSeguro !== undefined && datosForm.companiaSeguro !== "" && (
                       <Input
                         placeholder="Escribe el nombre de la compañía"
                         value={datosForm.companiaSeguro.trim() === "" ? "" : datosForm.companiaSeguro}

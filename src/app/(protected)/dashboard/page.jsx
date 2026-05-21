@@ -475,54 +475,95 @@ export default function DashboardPage() {
             <span className="w-1.5 h-6 bg-primary rounded-full"></span>
             Estado del Universo Total
           </h4>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
               { 
                 label: "Captación", 
                 count: porEtapa.find(x => x.etapa === "CAPTACION")?._count?._all || 0,
-                color: "bg-blue-500",
+                bgClass: "bg-blue-500/10 dark:bg-blue-500/20",
+                textClass: "text-blue-500 dark:text-blue-400",
+                borderClass: "hover:border-blue-500/30",
                 icon: "add_home",
                 action: () => navigateTo("/captaciones")
               },
               { 
                 label: "Pre-siniestro", 
                 count: porEtapa.find(x => x.etapa === "PRE_SINIESTRO")?._count?._all || 0,
-                color: "bg-amber-500",
+                bgClass: "bg-amber-500/10 dark:bg-amber-500/20",
+                textClass: "text-amber-500 dark:text-amber-400",
+                borderClass: "hover:border-amber-500/30",
                 icon: "assignment_late",
                 action: () => navigateTo("/pre-siniestro")
               },
               { 
                 label: "Inspección", 
                 count: porEstado.find(x => x.estado === "INSPECCION")?._count?._all || 0,
-                color: "bg-purple-500",
+                bgClass: "bg-purple-500/10 dark:bg-purple-500/20",
+                textClass: "text-purple-500 dark:text-purple-400",
+                borderClass: "hover:border-purple-500/30",
                 icon: "visibility",
                 action: () => navigateTo("/siniestros", { estado: "INSPECCION" })
               },
               { 
                 label: "Presupuesto", 
                 count: porEstado.find(x => x.estado === "PRESUPUESTO")?._count?._all || 0,
-                color: "bg-emerald-500",
+                bgClass: "bg-emerald-500/10 dark:bg-emerald-500/20",
+                textClass: "text-emerald-500 dark:text-emerald-400",
+                borderClass: "hover:border-emerald-500/30",
                 icon: "calculate",
                 action: () => navigateTo("/siniestros", { estado: "PRESUPUESTO" })
               },
               { 
-                label: "Despacho Inf.", 
+                label: "Antecedentes Liq.", 
                 count: porEstado.find(x => x.estado === "ENVIO_INFORMACION")?._count?._all || 0,
-                color: "bg-sky-500",
-                icon: "send",
+                bgClass: "bg-sky-500/10 dark:bg-sky-500/20",
+                textClass: "text-sky-500 dark:text-sky-400",
+                borderClass: "hover:border-sky-500/30",
+                icon: "quick_reference_all",
                 action: () => navigateTo("/siniestros", { estado: "ENVIO_INFORMACION" })
+              },
+              {
+                label: "Propuesta Liq.", 
+                count: porEstado.find(x => x.estado === "RECEPCION_PROPUESTA")?._count?._all || 0,
+                bgClass: "bg-teal-500/10 dark:bg-teal-500/20",
+                textClass: "text-teal-500 dark:text-teal-400",
+                borderClass: "hover:border-teal-500/30",
+                icon: "send",
+                action: () => navigateTo("/siniestros", { estado: "RECEPCION_PROPUESTA" })
+              },
+              { 
+                label: "Impugnados", 
+                count: resumen?.cantidadImpugnados || 0,
+                bgClass: "bg-orange-500/10 dark:bg-orange-500/20",
+                textClass: "text-orange-500 dark:text-orange-400",
+                borderClass: "hover:border-orange-500/30",
+                icon: "assignment_returned",
+                action: () => navigateTo("/siniestros", { flag: "IMPUGNADOS" })
               },
               { 
                 label: "En Demanda", 
                 count: porEstado.find(x => x.estado === "DEMANDA")?._count?._all || 0,
-                color: "bg-red-500",
+                bgClass: "bg-red-500/10 dark:bg-red-500/20",
+                textClass: "text-red-500 dark:text-red-400",
+                borderClass: "hover:border-red-500/30",
                 icon: "gavel",
                 action: () => navigateTo("/siniestros", { estado: "DEMANDA" })
               },
               { 
+                label: "En Juicio", 
+                count: porEstado.find(x => x.estado === "EN_JUICIO")?._count?._all || 0,
+                bgClass: "bg-rose-500/10 dark:bg-rose-500/20",
+                textClass: "text-rose-500 dark:text-rose-400",
+                borderClass: "hover:border-rose-500/30",
+                icon: "balance",
+                action: () => navigateTo("/siniestros", { estado: "EN_JUICIO" })
+              },
+              { 
                 label: "Finalizados", 
                 count: porEtapa.find(x => x.etapa === "CERRADO")?._count?._all || 0,
-                color: "bg-slate-500",
+                bgClass: "bg-slate-500/10 dark:bg-slate-500/20",
+                textClass: "text-slate-500 dark:text-slate-400",
+                borderClass: "hover:border-slate-500/30",
                 icon: "task_alt",
                 action: () => navigateTo("/siniestros", { modo: "CERRADOS" })
               }
@@ -530,15 +571,21 @@ export default function DashboardPage() {
               <div 
                 key={i} 
                 onClick={stat.action}
-                className="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 flex flex-col items-center text-center hover:scale-[1.05] hover:shadow-xl hover:border-primary/20 cursor-pointer transition-all shadow-sm group"
+                className={`bg-surface-container rounded-2xl p-4 border border-outline-variant/10 flex flex-col items-center justify-between text-center hover:scale-[1.05] hover:shadow-xl transition-all cursor-pointer shadow-sm group ${stat.borderClass}`}
               >
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-3 ${stat.color} bg-opacity-10 text-on-surface group-hover:bg-opacity-20 transition-all`}>
-                  <span className="material-symbols-outlined text-xl group-hover:scale-110 transition-transform" style={{ color: stat.color.replace('bg-', 'var(--') }}>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 ${stat.bgClass} group-hover:scale-110 transition-transform`}>
+                  <span className={`material-symbols-outlined text-2xl ${stat.textClass}`}>
                     {stat.icon}
                   </span>
                 </div>
-                <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">{stat.label}</p>
-                <p className="text-2xl font-black text-on-surface">{stat.count}</p>
+                <div className="flex-1 flex flex-col justify-center">
+                  <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-1 line-clamp-2 leading-tight min-h-[24px] flex items-center justify-center">
+                    {stat.label}
+                  </p>
+                  <p className="text-2xl font-black text-on-surface group-hover:text-primary transition-colors mt-1">
+                    {stat.count}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
