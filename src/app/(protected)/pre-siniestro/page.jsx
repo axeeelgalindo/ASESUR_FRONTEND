@@ -125,6 +125,16 @@ export default function PreSiniestroPage() {
   const [estadoFilter, setEstadoFilter] = useState("ALL");
   const [flagFilter, setFlagFilter] = useState("ALL");
   const [origenFilter, setOrigenFilter] = useState("ALL");
+  const [filterOrden, setFilterOrden] = useState("desc");
+  const [successToast, setSuccessToast] = useState(null);
+
+  useEffect(() => {
+    if (successToast) {
+      const timer = setTimeout(() => setSuccessToast(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [successToast]);
+
   const [usuarios, setUsuarios] = useState([]);
 
   // Datos para autorizar paso a siniestro
@@ -292,6 +302,7 @@ export default function PreSiniestroPage() {
       if (estadoFilter !== "ALL") p.append("estado", estadoFilter);
       if (flagFilter !== "ALL") p.append("flag", flagFilter);
       if (origenFilter !== "ALL") p.append("origen", origenFilter);
+      if (filterOrden) p.append("orden", filterOrden);
 
       const res = await apiGet(`/pre-siniestro?${p.toString()}`);
       if (res && res.data) {
@@ -312,7 +323,11 @@ export default function PreSiniestroPage() {
       refresh(query);
     }, 400);
     return () => clearTimeout(handler);
-  }, [query, pagina, limite, tipoFilter, estadoFilter, flagFilter, origenFilter]);
+  }, [query, pagina, limite, tipoFilter, estadoFilter, flagFilter, origenFilter, filterOrden]);
+
+  useEffect(() => {
+    setPagina(1);
+  }, [tipoFilter, estadoFilter, flagFilter, origenFilter, filterOrden]);
 
   // Cargar lista de asesores disponibles para el selector
   useEffect(() => {
@@ -717,10 +732,14 @@ export default function PreSiniestroPage() {
     setBusy(true);
     try {
       await apiPost(`/pre-siniestro/${selected.id}/solicitar-autorizacion`, {});
+      setOpenDetail(false);
+      setSelected(null);
+      setSelectedDocs([]);
+      setSuccessToast({
+        message: "¡Solicitud de autorización enviada con éxito!",
+        detail: "El caso ha sido enviado a Operaciones para su validación a Siniestro."
+      });
       await refresh();
-      const full = await apiGet(`/pre-siniestro/${selected.id}`);
-      setSelected(full);
-      setSelectedDocs(full.documentos || []);
     } catch (e) {
       const faltantes = e?.response?.data?.faltantes;
       if (Array.isArray(faltantes) && faltantes.length) {
@@ -752,12 +771,15 @@ export default function PreSiniestroPage() {
       await apiPost(`/pre-siniestro/${selected.id}/autorizar`, authData);
       setOpenAuth(false);
       setOpenDetail(false);
+      setSelected(null);
+      setSelectedDocs([]);
+      setSuccessToast({
+        message: "¡Caso autorizado y traspasado a Siniestro con éxito!",
+        detail: `Se asignó la compañía ${authData.companiaSeguro} y el Nº de Siniestro ${authData.numeroSiniestro}.`
+      });
       await refresh();
-      const full = await apiGet(`/pre-siniestro/${selected.id}`);
-      setSelected(full);
-      setSelectedDocs(full.documentos || []);
     } catch (e) {
-      setError("Error al autorizar caso");
+      setError(e?.response?.data?.error || e?.message || "Error al autorizar caso");
     } finally {
       setBusy(false);
     }
@@ -890,19 +912,7 @@ export default function PreSiniestroPage() {
     for (const t of OPS_REQ_PASO_SINIESTRO_DOCS)
       reqAutorizar.push(mk(t, "REQ_AUTORIZAR"));
 
-    // ✅ Campos de Estructura de Siniestro (Obligatorios para Ops)
-    reqAutorizar.push({
-      key: "COMPANIA",
-      label: "Compañía de Seguros",
-      ok: Boolean(caso?.companiaSeguro?.trim()),
-      group: "REQ_AUTORIZAR"
-    });
-    reqAutorizar.push({
-      key: "NUM_SINIESTRO",
-      label: "Nº de Siniestro",
-      ok: Boolean(caso?.numeroSiniestro?.trim()),
-      group: "REQ_AUTORIZAR"
-    });
+
 
     // 3) Otros / opcionales (solo para ordenar UI)
 
@@ -940,55 +950,47 @@ export default function PreSiniestroPage() {
   }, [checklist]);
 
   return (
-    <div className="min-h-screen bg-surface">
+    <div className="min-h-screen bg-surface px-6 py-10 lg:px-12 font-sans">
       {/* Header Area */}
-      <div className="relative overflow-hidden bg-surface-container-low px-4 pt-8 pb-6 md:px-8">
-        <div className="relative z-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div>
-            <div className="flex justify-center items-center gap-3">
-              <span className="material-symbols-outlined text-primary-fixed text-3xl">assignment_late</span>
-              <p className="text-sm font-medium text-on-surface-variant/80">
-                Validación, denuncias y autorización a etapa de Siniestro.
-              </p>
-            </div>
+      <div className="mb-8 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-inner shadow-primary/20 shrink-0">
+            <span className="material-symbols-outlined text-3xl font-light">assignment_late</span>
           </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={refresh}
-              disabled={loading || busy}
-              className="flex h-11 items-center gap-2 rounded-xl border border-outline-variant bg-surface px-4 text-sm font-bold text-on-surface transition hover:bg-surface-container-high disabled:opacity-50"
-            >
-              <span className={cls("material-symbols-outlined text-xl", (loading || busy) && "animate-spin")}>
-                refresh
-              </span>
-              Actualizar
-            </button>
-            <button
-              onClick={exportExcel}
-              disabled={loading || busy}
-              className="flex h-11 items-center gap-2 rounded-xl border border-outline-variant bg-surface px-4 text-sm font-bold text-on-surface transition hover:bg-surface-container-high disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-xl">download</span>
-              Exportar Excel
-            </button>
-            <button
-              onClick={handleOpenCreate}
-              disabled={busy}
-              className="flex h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-on-primary transition hover:bg-primary/90 shadow-lg shadow-primary/20"
-            >
-              <span className="material-symbols-outlined text-xl text-on-primary">add</span>
-              Nuevo Pre-Siniestro
-            </button>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-on-surface">Pre-Siniestros</h1>
+            <p className="text-sm font-medium text-on-surface-variant/70 mt-0.5">
+              Validación, denuncias y autorización a etapa de Siniestro.
+            </p>
           </div>
         </div>
 
-        {/* glass decorations */}
-        <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/5 blur-3xl"></div>
-        <div className="absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-secondary/5 blur-3xl"></div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="secondary" onClick={() => refresh(query)} disabled={loading || busy} className="px-5 border-outline-variant/30 font-bold h-11 rounded-xl">
+            <span className={cls("material-symbols-outlined text-xl transition-transform duration-700", loading && "animate-spin")}>
+              sync
+            </span>
+            Actualizar
+          </Button>
+          <Button variant="secondary" onClick={exportExcel} disabled={loading || busy} className="px-5 border-outline-variant/30 font-bold h-11 rounded-xl">
+            <span className="material-symbols-outlined text-xl">download</span>
+            Exportar Excel
+          </Button>
+          {isOps && (
+            <button
+              onClick={handleOpenCreate}
+              disabled={busy}
+              className="flex h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-on-primary shadow-lg shadow-primary/25 transition hover:bg-primary/95 disabled:opacity-50 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-xl">add_circle</span>
+              Nuevo Pre-Siniestro
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="p-4 md:p-8">
+      <div>
+        {/* Success / Info toasts */}
         {createdCasoSuccess && (
           <div className="mb-6 flex flex-col gap-2 rounded-2xl border border-green-500/20 bg-green-500/10 p-4 animate-in fade-in slide-in-from-top-2">
             <div className="flex items-center gap-3 text-green-700 dark:text-green-400 font-bold text-sm">
@@ -998,7 +1000,7 @@ export default function PreSiniestroPage() {
             <p className="text-xs text-on-surface-variant leading-relaxed">
               El caso ha sido registrado correctamente y se encuentra visible en el listado principal de <strong>Pre-Siniestros</strong>.
             </p>
-            <button 
+            <button
               onClick={() => setCreatedCasoSuccess(null)}
               className="mt-2 self-start text-[11px] font-bold text-green-600 hover:text-green-700 underline"
             >
@@ -1007,95 +1009,133 @@ export default function PreSiniestroPage() {
           </div>
         )}
 
-        {error && (
-          <div className="mb-6 flex items-center gap-3 rounded-2xl border border-error/20 bg-error-container/30 p-4 text-sm font-bold text-on-error-container animate-in fade-in slide-in-from-top-2">
-            <span className="material-symbols-outlined">error</span>
-            {error}
+        {successToast && (
+          <div className="mb-6 flex flex-col gap-2 rounded-2xl border border-green-500/20 bg-green-500/10 p-4 animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center gap-3 text-green-700 dark:text-green-400 font-bold text-sm">
+              <span className="material-symbols-outlined text-green-600 text-lg">check_circle</span>
+              <span>{successToast.message}</span>
+            </div>
+            {successToast.detail && (
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                {successToast.detail}
+              </p>
+            )}
           </div>
         )}
 
+
         {/* Filters Bar */}
-        <div className="mb-8 flex flex-col gap-4">
-          <div className="flex flex-col gap-4 rounded-3xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm md:flex-row md:items-center">
-            <div className="relative flex-1">
-              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
-              <input
-                type="text"
-                placeholder="Folio, cliente, RUT, dirección..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="h-12 w-full rounded-2xl border-none bg-surface-container px-12 text-sm font-medium text-on-surface placeholder:text-on-surface-variant/50 focus:ring-2 focus:ring-primary/50"
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <select
+        <section className="mb-8">
+          <div className="bg-surface-container-low rounded-[2rem] border border-outline-variant/10 p-6 md:p-8 shadow-sm backdrop-blur-xl">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 items-end">
+              {/* Row 1, Col 1-2: Search */}
+              <div className="sm:col-span-2 relative">
+                <span className="text-[11px] font-bold text-on-surface-variant/70 tracking-wider mb-1.5 block">Búsqueda Inteligente</span>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant/60 font-light">search</span>
+                  <input
+                    type="text"
+                    placeholder="Buscar por folio, cliente, RUT, dirección..."
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    className="w-full bg-surface-container focus:bg-surface-container-high border border-outline-variant/10 focus:border-primary/40 focus:ring-4 focus:ring-primary/5 rounded-2xl pl-12 pr-4 h-12 text-on-surface placeholder:text-on-surface-variant/40 transition-all outline-none text-sm font-medium"
+                  />
+                </div>
+              </div>
+              
+              {/* Row 1, Col 3: Tipo */}
+              <Select
+                label="Tipo de Caso"
                 value={tipoFilter}
-                onChange={(e) => setTipoFilter(e.target.value)}
-                className="h-12 rounded-2xl border-none bg-surface-container px-4 pr-10 text-sm font-bold text-on-surface focus:ring-2 focus:ring-primary/50"
-              >
-                <option value="ALL">Todos los Tipos</option>
-                <option value="HIPOTECARIO_A">Hipotecario (A)</option>
-                <option value="POLIZA_PARTICULAR_B">Póliza Particular (B)</option>
-              </select>
+                onChange={setTipoFilter}
+                options={[
+                  { value: "ALL", label: "Todos los Tipos" },
+                  { value: "HIPOTECARIO_A", label: "Hipotecario (A)" },
+                  { value: "POLIZA_PARTICULAR_B", label: "Póliza Particular (B)" },
+                ]}
+              />
 
-              <select
+              {/* Row 1, Col 4: Estado */}
+              <Select
+                label="Estado"
                 value={estadoFilter}
-                onChange={(e) => setEstadoFilter(e.target.value)}
-                className="h-12 rounded-2xl border-none bg-surface-container px-4 pr-10 text-sm font-bold text-on-surface focus:ring-2 focus:ring-primary/50"
-              >
-                <option value="ALL">Todos los Estados</option>
-                <option value="ABIERTO">Abierto</option>
-                <option value="EN_REVISION">En revisión</option>
-                <option value="PENDIENTE_AUTORIZACION">Pendiente autorización</option>
-                <option value="AUTORIZADO">Autorizado</option>
-                <option value="RECHAZADO">Rechazado</option>
-              </select>
-              <select
+                onChange={setEstadoFilter}
+                options={[
+                  { value: "ALL", label: "Todos los Estados" },
+                  { value: "ABIERTO", label: "Abierto" },
+                  { value: "EN_REVISION", label: "En revisión" },
+                  { value: "PENDIENTE_AUTORIZACION", label: "Pendiente autorización" },
+                  { value: "AUTORIZADO", label: "Autorizado" },
+                  { value: "RECHAZADO", label: "Rechazado" },
+                ]}
+              />
+
+              {/* Row 2, Col 1: Banderas */}
+              <Select
+                label="Bandera"
                 value={flagFilter}
-                onChange={(e) => setFlagFilter(e.target.value)}
-                className="h-12 rounded-2xl border-none bg-surface-container px-4 pr-10 text-sm font-bold text-on-surface focus:ring-2 focus:ring-primary/50"
-              >
-                <option value="ALL">Todas las Banderas</option>
-                <option value="VB_PENDIENTE">VB pendiente</option>
-                <option value="PEND_AUT">Pendiente Ops</option>
-                <option value="AUTORIZADO">Autorizado</option>
-                <option value="RECHAZADO">Rechazado</option>
-              </select>
+                onChange={setFlagFilter}
+                options={[
+                  { value: "ALL", label: "Todas las Banderas" },
+                  { value: "VB_PENDIENTE", label: "VB pendiente" },
+                  { value: "PEND_AUT", label: "Pendiente Ops" },
+                  { value: "AUTORIZADO", label: "Autorizado" },
+                  { value: "RECHAZADO", label: "Rechazado" },
+                ]}
+              />
 
-              <select
+              {/* Row 2, Col 2: Origen */}
+              <Select
+                label="Origen"
                 value={origenFilter}
-                onChange={(e) => setOrigenFilter(e.target.value)}
-                className="h-12 rounded-2xl border-none bg-surface-container px-4 pr-10 text-sm font-bold text-on-surface focus:ring-2 focus:ring-primary/50"
-              >
-                <option value="ALL">Todos los Orígenes</option>
-                <option value="ASESUR">Asesur</option>
-                <option value="PROPIO">Propio</option>
-              </select>
+                onChange={setOrigenFilter}
+                options={[
+                  { value: "ALL", label: "Todos los Orígenes" },
+                  { value: "ASESUR", label: "Asesur" },
+                  { value: "PROPIO", label: "Propio" },
+                ]}
+              />
 
-              <div className="flex h-12 items-center gap-1 rounded-2xl bg-surface-container p-1">
-                <button
-                  onClick={() => setViewMode("grid")}
-                  className={cls(
-                    "flex h-10 w-10 items-center justify-center rounded-xl transition",
-                    viewMode === "grid" ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
-                  )}
-                >
-                  <span className="material-symbols-outlined">grid_view</span>
-                </button>
-                <button
-                  onClick={() => setViewMode("list")}
-                  className={cls(
-                    "flex h-10 w-10 items-center justify-center rounded-xl transition",
-                    viewMode === "list" ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
-                  )}
-                >
-                  <span className="material-symbols-outlined">view_list</span>
-                </button>
+              {/* Row 2, Col 3: Orden */}
+              <Select
+                label="Orden"
+                value={filterOrden}
+                onChange={setFilterOrden}
+                options={[
+                  { value: "desc", label: "Más Recientes" },
+                  { value: "asc", label: "Más Antiguos" },
+                ]}
+              />
+
+              {/* Row 2, Col 4: Vista */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-bold text-on-surface-variant/70 tracking-wider">Vista</span>
+                <div className="flex h-12 items-center gap-1 rounded-2xl bg-surface-container p-1 border border-outline-variant/10 w-full justify-around">
+                  <button
+                    onClick={() => setViewMode("grid")}
+                    className={cls(
+                      "flex h-10 flex-1 items-center justify-center rounded-xl transition-all cursor-pointer",
+                      viewMode === "grid" ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
+                    )}
+                  >
+                    <span className="material-symbols-outlined text-xl">grid_view</span>
+                    <span className="text-xs font-bold ml-1.5 hidden sm:inline">Tarjetas</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode("list")}
+                    className={cls(
+                      "flex h-10 flex-1 items-center justify-center rounded-xl transition-all cursor-pointer",
+                      viewMode === "list" ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
+                    )}
+                  >
+                    <span className="material-symbols-outlined text-xl">view_list</span>
+                    <span className="text-xs font-bold ml-1.5 hidden sm:inline">Lista</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
         {/* Content Area */}
         {loading ? (
@@ -1293,6 +1333,32 @@ export default function PreSiniestroPage() {
       </div>
 
       {/* MODALES */}
+      <Modal
+        open={!!error}
+        title=""
+        maxWidth="max-w-md"
+        onClose={() => setError(null)}
+      >
+        <div className="flex flex-col items-center text-center p-4 gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500/10 text-red-600 dark:text-red-400">
+            <span className="material-symbols-outlined text-4xl">warning</span>
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-lg font-black text-on-surface">Atención / No permitido</h3>
+            <p className="text-sm font-semibold text-on-surface-variant leading-relaxed">
+              {error}
+            </p>
+          </div>
+          <Button 
+            className="w-full mt-4 cursor-pointer font-bold uppercase tracking-wider h-11 rounded-2xl" 
+            variant="secondary" 
+            onClick={() => setError(null)}
+          >
+            Entendido
+          </Button>
+        </div>
+      </Modal>
+
       <Modal
         open={openCreate}
         title="Nuevo Pre-Siniestro"
@@ -1755,11 +1821,24 @@ export default function PreSiniestroPage() {
             Al autorizar el caso, este pasará a la etapa de Siniestro y se habilitará la gestión completa. Por favor confirma la Compañía de Seguros y el N° de Siniestro.
           </p>
           <div className="grid gap-4 md:grid-cols-2">
-            <Input
-              label="Compañía de Seguros *"
-              value={authData.companiaSeguro}
-              onChange={(v) => setAuthData(p => ({ ...p, companiaSeguro: v }))}
-            />
+            <div className="flex flex-col gap-2">
+              <Select
+                label="Compañía de Seguros *"
+                options={COMPANIAS_SEGURO}
+                value={COMPANIAS_BASICAS.includes(authData.companiaSeguro) ? authData.companiaSeguro : (authData.companiaSeguro ? "Otra" : "")}
+                onChange={(v) => {
+                  if (v === "Otra") setAuthData(p => ({ ...p, companiaSeguro: " " }));
+                  else setAuthData(p => ({ ...p, companiaSeguro: v }));
+                }}
+              />
+              {!COMPANIAS_BASICAS.includes(authData.companiaSeguro) && authData.companiaSeguro !== undefined && authData.companiaSeguro !== "" && (
+                <Input
+                  placeholder="Escribe el nombre de la compañía"
+                  value={authData.companiaSeguro.trim() === "" ? "" : authData.companiaSeguro}
+                  onChange={(v) => setAuthData(p => ({ ...p, companiaSeguro: v }))}
+                />
+              )}
+            </div>
             <Input
               label="N° de Siniestro *"
               value={authData.numeroSiniestro}
@@ -2011,6 +2090,7 @@ export default function PreSiniestroPage() {
           setOpenDetail(false);
           setSelected(null);
           setSelectedDocs([]);
+          setError(null);
         }}
       >
         {!selected ? (
@@ -2020,6 +2100,8 @@ export default function PreSiniestroPage() {
           </div>
         ) : (
           <div className="space-y-8 text-on-surface">
+
+
             {/* Cabecera de Resumen */}
             <Section
               title="Resumen del Caso"
@@ -2170,11 +2252,11 @@ export default function PreSiniestroPage() {
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button
                   variant="secondary"
-                  className="flex-1 min-w-[180px]"
+                  className="flex-1 min-w-[180px] hover:cursor-pointer uppercase"
                   onClick={solicitarOps}
                   disabled={busy || !preReadyForRequestOps || selected?.estado === "PENDIENTE_AUTORIZACION"}
                 >
-                  <span className="material-symbols-outlined text-sm">send</span>
+                  <span className="material-symbols-outlined text-sm ">send</span>
                   {selected?.estado === "PENDIENTE_AUTORIZACION" ? "Escalado a Ops" : "Solicitar Autorización"}
                 </Button>
                 {isOps && (
@@ -2236,83 +2318,7 @@ export default function PreSiniestroPage() {
               </Section>
             )}
 
-            {/* Datos del Siniestro */}
-            <Section title="Estructura del Siniestro" desc="Información obligatoria para paso a Siniestro">
-              <div className="grid gap-6">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="flex flex-col gap-2">
-                    <Select
-                      label="Compañía de Seguros *"
-                      options={COMPANIAS_SEGURO}
-                      value={COMPANIAS_BASICAS.includes(datosForm.companiaSeguro) ? datosForm.companiaSeguro : (datosForm.companiaSeguro ? "Otra" : "")}
-                      onChange={(v) => {
-                        if (v === "Otra") setDatosForm(p => ({ ...p, companiaSeguro: " " }));
-                        else setDatosForm(p => ({ ...p, companiaSeguro: v }));
-                      }}
-                      disabled={!isOps}
-                    />
-                    {!COMPANIAS_BASICAS.includes(datosForm.companiaSeguro) && datosForm.companiaSeguro !== undefined && datosForm.companiaSeguro !== "" && (
-                      <Input
-                        placeholder="Escribe el nombre de la compañía"
-                        value={datosForm.companiaSeguro.trim() === "" ? "" : datosForm.companiaSeguro}
-                        onChange={(v) => setDatosForm(p => ({ ...p, companiaSeguro: v }))}
-                        disabled={!isOps}
-                      />
-                    )}
-                  </div>
-                  <Input
-                    label="Nº de Siniestro *"
-                    value={datosForm.numeroSiniestro}
-                    onChange={(v) => setDatosForm((p) => ({ ...p, numeroSiniestro: v }))}
-                    placeholder="Ej: 987654321"
-                    disabled={!isOps}
-                  />
-                </div>
 
-                <div className="rounded-3xl border border-outline-variant/20 bg-surface-container-low p-6">
-                  <h6 className="mb-4 text-xs font-black uppercase tracking-widest text-on-surface-variant/50">Datos del Liquidador</h6>
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <Input
-                      label="Nombre Liquidador (Opcional en Pre-Siniestro)"
-                      value={datosForm.nombreLiquidador}
-                      onChange={(v) => setDatosForm((p) => ({ ...p, nombreLiquidador: v }))}
-                      placeholder="Nombre del liquidador asignado"
-                      disabled={!isOps}
-                    />
-                    <Input
-                      label="Email Liquidador (Opcional en Pre-Siniestro)"
-                      value={datosForm.emailLiquidador}
-                      onChange={(v) => setDatosForm((p) => ({ ...p, emailLiquidador: v }))}
-                      placeholder="ejemplo@liquidador.cl"
-                      disabled={!isOps}
-                    />
-                    <Input
-                      label="Teléfono Liquidador (Opcional)"
-                      value={datosForm.telefonoLiquidador}
-                      onChange={(v) => setDatosForm((p) => ({ ...p, telefonoLiquidador: v }))}
-                      placeholder="+56 9 1234 5678"
-                      disabled={!isOps}
-                    />
-                    <Input
-                      label="Analista a cargo (Opcional)"
-                      value={datosForm.nombreAnalista}
-                      onChange={(v) => setDatosForm((p) => ({ ...p, nombreAnalista: v }))}
-                      placeholder="Nombre del analista de la compañía"
-                      disabled={!isOps}
-                    />
-                  </div>
-
-                  {isOps && (
-                    <div className="mt-8 flex justify-end gap-3">
-                      <Button onClick={saveDatos} disabled={busy}>
-                        <span className="material-symbols-outlined text-sm">save</span>
-                        Guardar Cambios
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </Section>
 
             {/* Checklists de Requisitos */}
             <div className="grid gap-4 md:grid-cols-2">

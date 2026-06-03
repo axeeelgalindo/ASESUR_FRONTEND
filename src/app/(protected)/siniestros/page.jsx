@@ -29,6 +29,8 @@ const EstadoSiniestroLabel = {
   DESCONFORME: "Propuesta Desconforme",
   RECHAZADO_LIQ: "Caso rechazado",
   INFORME_FINAL: "Liquidación - Informe final",
+  IMPUGNACION: "Liquidación - Impugnación",
+  DEMANDA: "Demanda judicial",
   COBRANZA: "Cobranza",
   FACTURACION: "Facturación",
   DESISTIMIENTO: "Desistido",
@@ -44,6 +46,17 @@ import { Pagination } from "@/components/ui/Pagination";
 
 function cls(...s) {
   return s.filter(Boolean).join(" ");
+}
+
+const fmt = (d) => {
+  if (!d) return "—";
+  return new Intl.DateTimeFormat("es-CL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(d));
 }
 
 export default function SiniestrosPage() {
@@ -69,6 +82,7 @@ export default function SiniestrosPage() {
   // ✅ filtro etapa (abiertos / cerrados)
   const [stageTab, setStageTab] = useState("ABIERTOS"); // ABIERTOS | CERRADOS
   const [viewMode, setViewMode] = useState("TABLE"); // "GRID" | "TABLE"
+  const [filterOrden, setFilterOrden] = useState("desc");
 
   const refresh = async (q = query) => {
     setError(null);
@@ -84,6 +98,7 @@ export default function SiniestrosPage() {
       if (origenFilter !== "ALL") p.append("origen", origenFilter);
       if (asesorFilter !== "ALL") p.append("asesorId", asesorFilter);
       if (flagFilter !== "ALL") p.append("flag", flagFilter);
+      if (filterOrden) p.append("orden", filterOrden);
 
       const res = await apiGet(`/siniestros?${p.toString()}`);
       if (res && res.data) {
@@ -104,7 +119,7 @@ export default function SiniestrosPage() {
       refresh(query);
     }, 400);
     return () => clearTimeout(handler);
-  }, [query, pagina, limite, stageTab, tipoFilter, estadoFilter, origenFilter, asesorFilter, flagFilter]);
+  }, [query, pagina, limite, stageTab, tipoFilter, estadoFilter, origenFilter, asesorFilter, flagFilter, filterOrden]);
 
   useEffect(() => {
     async function loadAsesores() {
@@ -120,7 +135,7 @@ export default function SiniestrosPage() {
 
   useEffect(() => {
     setPagina(1);
-  }, [stageTab, tipoFilter, estadoFilter, origenFilter, flagFilter, asesorFilter]);
+  }, [stageTab, tipoFilter, estadoFilter, origenFilter, flagFilter, asesorFilter, filterOrden]);
 
   // Sync from URL
   useEffect(() => {
@@ -177,51 +192,31 @@ export default function SiniestrosPage() {
   const filtered = casos;
 
   return (
-    <div className="min-h-screen bg-surface px-6 pb-20 pt-8 text-on-surface transition-colors duration-500 md:px-10">
-      <div className="mb-12 flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-inner shadow-primary/20">
-              <span className="material-symbols-outlined text-3xl">task_alt</span>
-            </div>
-            <p className="ml-1 text-sm font-bold text-on-surface-variant/60">
+    <div className="min-h-screen bg-surface px-6 pb-20 pt-8 text-on-surface transition-colors duration-500 md:px-10 font-sans">
+      {/* Header Area */}
+      <div className="mb-8 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-inner shadow-primary/20 shrink-0">
+            <span className="material-symbols-outlined text-3xl font-light">task_alt</span>
+          </div>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-on-surface">Siniestros</h1>
+            <p className="text-sm font-medium text-on-surface-variant/70 mt-0.5">
               Seguimiento de liquidaciones y cierres de casos.
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center rounded-2xl border border-outline-variant/20 bg-surface-container-low p-1 shadow-sm">
-            <button
-              onClick={() => setViewMode("TABLE")}
-              className={cls(
-                "flex h-9 items-center justify-center rounded-xl px-4 text-xs font-bold transition-all",
-                viewMode === "TABLE" ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:bg-surface-container"
-              )}
-            >
-              <span className="material-symbols-outlined mr-2 text-sm">table_rows</span>
-
-            </button>
-            <button
-              onClick={() => setViewMode("GRID")}
-              className={cls(
-                "flex h-9 items-center justify-center rounded-xl px-4 text-xs font-bold transition-all",
-                viewMode === "GRID" ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:bg-surface-container"
-              )}
-            >
-              <span className="material-symbols-outlined mr-2 text-sm">grid_view</span>
-
-            </button>
-          </div>
-          <Button variant="secondary" onClick={exportExcel} disabled={loading || busy} className="px-6 border-outline-variant/30">
-            <span className="material-symbols-outlined text-sm">download</span>
-            Exportar Excel
-          </Button>
-          <Button variant="secondary" onClick={() => refresh(query)} disabled={loading || busy} className="px-6 border-outline-variant/30">
-            <span className={cls("material-symbols-outlined text-sm transition-transform duration-700", loading && "animate-spin")}>
+          <Button variant="secondary" onClick={() => refresh(query)} disabled={loading || busy} className="px-5 border-outline-variant/30 font-bold h-11 rounded-xl">
+            <span className={cls("material-symbols-outlined text-xl transition-transform duration-700", loading && "animate-spin")}>
               sync
             </span>
             Actualizar
+          </Button>
+          <Button variant="secondary" onClick={exportExcel} disabled={loading || busy} className="px-5 border-outline-variant/30 font-bold h-11 rounded-xl">
+            <span className="material-symbols-outlined text-xl">download</span>
+            Exportar Excel
           </Button>
         </div>
       </div>
@@ -244,75 +239,117 @@ export default function SiniestrosPage() {
           />
         </div>
 
-        <div className="grid gap-6 rounded-[2rem] border border-outline-variant/10 bg-surface-container-low/40 p-6 md:p-8 shadow-sm backdrop-blur-xl md:grid-cols-6 lg:grid-cols-12">
-          <div className="md:col-span-6 lg:col-span-5">
-            <Input
-              label="Búsqueda Inteligente"
-              value={query}
-              onChange={setQuery}
-              placeholder="Compañía, cliente, RUT, folio..."
-            />
-          </div>
+        {/* Filters Bar */}
+        <section>
+          <div className="bg-surface-container-low rounded-[2rem] border border-outline-variant/10 p-6 md:p-8 shadow-sm backdrop-blur-xl">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 items-end">
+              {/* Row 1, Col 1-2: Search */}
+              <div className="sm:col-span-2">
+                <Input
+                  label="Búsqueda Inteligente"
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Compañía, cliente, RUT, folio..."
+                />
+              </div>
 
-          <div className="md:col-span-2 lg:col-span-3">
-            <Select
-              label="Tipo de Caso"
-              value={tipoFilter}
-              onChange={setTipoFilter}
-              options={[
-                { value: "ALL", label: "Todos" },
-                { value: "HIPOTECARIO_A", label: "Hipotecario" },
-                { value: "POLIZA_PARTICULAR_B", label: "Póliza Particular" },
-              ]}
-            />
-          </div>
+              {/* Row 1, Col 3: Tipo */}
+              <Select
+                label="Tipo de Caso"
+                value={tipoFilter}
+                onChange={setTipoFilter}
+                options={[
+                  { value: "ALL", label: "Todos" },
+                  { value: "HIPOTECARIO_A", label: "Hipotecario" },
+                  { value: "POLIZA_PARTICULAR_B", label: "Póliza Particular" },
+                ]}
+              />
 
-          <div className="md:col-span-2 lg:col-span-3">
-            <Select
-              label="Estado Liquidación"
-              value={estadoFilter}
-              onChange={setEstadoFilter}
-              options={[
-                { value: "ALL", label: "Todos" },
-                { value: "AUTORIZADO", label: "Liq. - Autorizado" },
-                { value: "INSPECCION", label: "Liq. - Inspección" },
-                { value: "PRESUPUESTO", label: "Liq. - Presupuesto" },
-                { value: "ENVIO_INFORMACION", label: "Liq. - Antecedentes Liquidador" },
-                { value: "RECEPCION_PROPUESTA", label: "Propuesta Liq." },
-                { value: "INFORME_FINAL", label: "Liq. - Informe Final" },
-                { value: "COBRANZA", label: "Cobranza" },
-                { value: "FACTURACION", label: "Facturación" },
-                { value: "DESISTIMIENTO", label: "Desistido" },
-                { value: "CERRADO", label: "Cerrado" },
-              ]}
-            />
-          </div>
+              {/* Row 1, Col 4: Estado */}
+              <Select
+                label="Estado Liquidación"
+                value={estadoFilter}
+                onChange={setEstadoFilter}
+                options={[
+                  { value: "ALL", label: "Todos" },
+                  { value: "AUTORIZADO", label: "Liq. - Autorizado" },
+                  { value: "INSPECCION", label: "Liq. - Inspección" },
+                  { value: "PRESUPUESTO", label: "Liq. - Presupuesto" },
+                  { value: "ENVIO_INFORMACION", label: "Liq. - Antecedentes Liquidador" },
+                  { value: "RECEPCION_PROPUESTA", label: "Propuesta Liq." },
+                  { value: "INFORME_FINAL", label: "Liq. - Informe Final" },
+                  { value: "IMPUGNACION", label: "Liq. - Impugnación" },
+                  { value: "DEMANDA", label: "Demanda Judicial" },
+                  { value: "COBRANZA", label: "Cobranza" },
+                  { value: "FACTURACION", label: "Facturación" },
+                  { value: "DESISTIMIENTO", label: "Desistido" },
+                  { value: "CERRADO", label: "Cerrado" },
+                ]}
+              />
 
-          <div className="md:col-span-2 lg:col-span-2">
-            <Select
-              label="Origen"
-              value={origenFilter}
-              onChange={setOrigenFilter}
-              options={[
-                { value: "ALL", label: "Todos" },
-                { value: "ASESUR", label: "Asesur" },
-                { value: "PROPIO", label: "Propio" },
-              ]}
-            />
-          </div>
+              {/* Row 2, Col 1: Origen */}
+              <Select
+                label="Origen"
+                value={origenFilter}
+                onChange={setOrigenFilter}
+                options={[
+                  { value: "ALL", label: "Todos" },
+                  { value: "ASESUR", label: "Asesur" },
+                  { value: "PROPIO", label: "Propio" },
+                ]}
+              />
 
-          <div className="md:col-span-2 lg:col-span-3">
-            <Select
-              label="Asesor Asignado"
-              value={asesorFilter}
-              onChange={setAsesorFilter}
-              options={[
-                { value: "ALL", label: "Todos los Asesores" },
-                ...asesores.map(a => ({ value: a.id, label: a.nombre }))
-              ]}
-            />
+              {/* Row 2, Col 2: Asesor Asignado */}
+              <Select
+                label="Asesor Asignado"
+                value={asesorFilter}
+                onChange={setAsesorFilter}
+                options={[
+                  { value: "ALL", label: "Todos los Asesores" },
+                  ...asesores.map(a => ({ value: a.id, label: a.nombre }))
+                ]}
+              />
+
+              {/* Row 2, Col 3: Orden */}
+              <Select
+                label="Orden"
+                value={filterOrden}
+                onChange={setFilterOrden}
+                options={[
+                  { value: "desc", label: "Más Recientes" },
+                  { value: "asc", label: "Más Antiguos" },
+                ]}
+              />
+
+              {/* Row 2, Col 4: Vista */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-bold text-on-surface-variant/70 tracking-wider">Vista</span>
+                <div className="flex h-12 items-center gap-1 rounded-2xl bg-surface-container p-1 border border-outline-variant/10 w-full justify-around">
+                  <button
+                    onClick={() => setViewMode("GRID")}
+                    className={cls(
+                      "flex h-10 flex-1 items-center justify-center rounded-xl transition-all cursor-pointer",
+                      viewMode === "GRID" ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
+                    )}
+                  >
+                    <span className="material-symbols-outlined text-xl">grid_view</span>
+                    <span className="text-xs font-bold ml-1.5 hidden sm:inline">Tarjetas</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode("TABLE")}
+                    className={cls(
+                      "flex h-10 flex-1 items-center justify-center rounded-xl transition-all cursor-pointer",
+                      viewMode === "TABLE" ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
+                    )}
+                  >
+                    <span className="material-symbols-outlined text-xl">view_list</span>
+                    <span className="text-xs font-bold ml-1.5 hidden sm:inline">Lista</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
       </div>
 
       <div className="mt-8">
@@ -388,45 +425,79 @@ export default function SiniestrosPage() {
                 ))}
               </div>
             ) : (
-              <div className="grid gap-4">
-                {filtered.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => openCaso(c)}
-                    className={cls(
-                      "group flex flex-col gap-6 rounded-[2rem] border border-outline-variant/10 p-6 transition-all duration-500 hover:border-primary/20 hover:shadow-xl hover:shadow-primary/5 md:flex-row md:items-center",
-                      c.esCasoAsesur ? "border-l-4 border-l-primary bg-primary/[0.02]" : "border-l-4 border-l-amber-500 bg-amber-500/[0.02]"
-                    )}
-                  >
-                    <div className="flex flex-1 items-center gap-6">
-                      <div className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] bg-surface-container-high text-primary transition-transform group-hover:scale-105 sm:flex">
-                        <span className="material-symbols-outlined text-2xl">assignment</span>
-                      </div>
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-black tracking-tight text-on-surface">SIN-{String(c.folio).padStart(6, "0")}</span>
-                          <Pill tone="purple">{TipoCasoLabel[c.tipo] || c.tipo}</Pill>
-                        </div>
-                        <div className="text-left text-sm font-bold border-l-2 border-primary/20 pl-3 text-on-surface/80">
-                          {c.nombreCliente} <span className="mx-2 text-on-surface-variant/30">|</span> <span className="text-xs font-semibold text-on-surface-variant/60">{c.direccion}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex shrink-0 flex-col items-end gap-2 text-right">
-                      <Pill tone={c.estado === "APROBADA" ? "green" : "blue"}>
-                        {EstadoSiniestroLabel[c.estado] || c.estado}
-                      </Pill>
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/40">
-                        Siniestro: {c.numeroSiniestro || "—"}
-                      </div>
-                    </div>
-
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-on-surface/5 text-on-surface-variant group-hover:bg-primary/20 group-hover:text-primary">
-                      <span className="material-symbols-outlined transition-transform duration-500 group-hover:translate-x-0.5">arrow_forward</span>
-                    </div>
-                  </button>
-                ))}
+              <div className="overflow-hidden rounded-3xl border border-outline-variant/30 bg-surface-container-lowest shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-outline-variant/30 bg-surface-container-low">
+                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Folio</th>
+                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Cliente</th>
+                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Tipo / Compañía</th>
+                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Estado / N° Siniestro</th>
+                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Ubicación</th>
+                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Autorizado</th>
+                        <th className="px-6 py-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant/30">
+                      {filtered.map((c) => {
+                        const toneEstado =
+                          c.estado === "APROBADA"
+                            ? "green"
+                            : c.estado === "DESCONFORME"
+                              ? "red"
+                              : "blue";
+                        return (
+                          <tr
+                            key={c.id}
+                            onClick={() => openCaso(c)}
+                            className={cls(
+                              "group cursor-pointer transition hover:bg-surface-container-low",
+                              c.esCasoAsesur ? "border-l-4 border-l-primary bg-primary/[0.01]" : "border-l-4 border-l-amber-500 bg-amber-500/[0.01]"
+                            )}
+                          >
+                            <td className="px-6 py-4">
+                              <div className="text-sm font-black text-on-surface">SIN-{String(c.folio).padStart(6, "0")}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-sm font-bold text-on-surface">{c.nombreCliente}</div>
+                              <div className="text-[10px] font-bold text-on-surface-variant/60">{c.rutCliente}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col gap-1 items-start">
+                                <Pill tone="purple">{TipoCasoLabel[c.tipo] || c.tipo}</Pill>
+                                <span className="text-xs font-bold text-on-surface-variant">{c.companiaSeguro || "—"}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col gap-1 items-start">
+                                <Pill tone={toneEstado}>{EstadoSiniestroLabel[c.estado] || c.estado}</Pill>
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/40">
+                                  N° {c.numeroSiniestro || "—"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="line-clamp-1 text-[11px] font-bold text-on-surface-variant">
+                                {c.direccion}
+                                {c.comuna && `, ${c.comuna}`}
+                                {c.region && ` (${c.region})`}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-xs font-bold text-on-surface-variant/50">
+                              {fmt(c.autorizacionFecha)}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <button className="rounded-full p-2 text-on-surface-variant transition group-hover:bg-primary/10 group-hover:text-primary">
+                                <span className="material-symbols-outlined">chevron_right</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </>

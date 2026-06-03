@@ -65,6 +65,7 @@ const EstadoSiniestroLabel = {
     DESCONFORME: "Propuesta Desconforme",
     RECHAZADO_LIQ: "Caso rechazado",
     INFORME_FINAL: "Liquidación - Informe final",
+    IMPUGNACION: "Liquidación - Impugnación",
     COBRANZA: "Cobranza",
     FACTURACION: "Facturación",
     DEMANDA: "Modo Demanda",
@@ -131,6 +132,27 @@ const fmtDate = (d) => {
     }
 };
 
+const formatEmlDate = (rawDate) => {
+    if (!rawDate) return "—";
+    try {
+        const d = new Date(rawDate);
+        if (isNaN(d.getTime())) return rawDate;
+        const opciones = {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        };
+        const formatted = d.toLocaleString('es-CL', opciones);
+        return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+    } catch {
+        return rawDate;
+    }
+};
+
 export default function SiniestroDetailPage() {
     const { id } = useParams();
     const router = useRouter();
@@ -192,6 +214,22 @@ export default function SiniestroDetailPage() {
     const [confirmPago, setConfirmPago] = useState({}); // { id: { fechaPago: string } | null }
     const [emailForm, setEmailForm] = useState({ destinatarios: "", cc: "", asunto: "", mensaje: "", files: [], adjuntosPath: [] });
     const [openEmail, setOpenEmail] = useState(false);
+    const [emailGestion, setEmailGestion] = useState(null);
+    const [liquidadorFormModal, setLiquidadorFormModal] = useState({
+        open: false,
+        nombreLiquidador: "",
+        emailLiquidador: "",
+        gestion: null
+    });
+    const [rechazoPropuestaModal, setRechazoPropuestaModal] = useState({
+        open: false,
+        observaciones: "",
+        file: null,
+        gestion: null
+    });
+    const [openRejectionViewer, setOpenRejectionViewer] = useState(false);
+    const [selectedRejectionDoc, setSelectedRejectionDoc] = useState(null);
+    const [emlParsed, setEmlParsed] = useState(null);
     const [openWordModal, setOpenWordModal] = useState(false);
     const [openBudgetModal, setOpenBudgetModal] = useState(false);
     const [selectedFotosWord, setSelectedFotosWord] = useState([]);
@@ -221,12 +259,35 @@ export default function SiniestroDetailPage() {
         nombreLiquidador: "", emailLiquidador: "", telefonoLiquidador: "",
         nombreAnalista: "", estado: "", abogadosAsignados: "",
         abogadosIds: [],
+        encargadoPresupuestoId: "",
     });
 
     const [allAbogados, setAllAbogados] = useState([]);
     const [abogadoSearchModal, setAbogadoSearchModal] = useState("");
     const [abogadoSearchEdit, setAbogadoSearchEdit] = useState("");
     const [openJuicioModal, setOpenJuicioModal] = useState(false);
+    const [confirmJuicioModal, setConfirmJuicioModal] = useState({ open: false, type: "" });
+    const [juicioResultToast, setJuicioResultToast] = useState(null);
+    const [confirmDesistirModal, setConfirmDesistirModal] = useState(false);
+    const [desistirToast, setDesistirToast] = useState(null);
+
+    useEffect(() => {
+        if (juicioResultToast) {
+            const timer = setTimeout(() => {
+                setJuicioResultToast(null);
+            }, 6000);
+            return () => clearTimeout(timer);
+        }
+    }, [juicioResultToast]);
+
+    useEffect(() => {
+        if (desistirToast) {
+            const timer = setTimeout(() => {
+                setDesistirToast(null);
+            }, 6000);
+            return () => clearTimeout(timer);
+        }
+    }, [desistirToast]);
 
     const loadAbogados = async () => {
         try {
@@ -237,12 +298,22 @@ export default function SiniestroDetailPage() {
         }
     };
 
-    const filteredAbogadosModal = allAbogados.filter(a => 
+    const [allUsuarios, setAllUsuarios] = useState([]);
+    const loadUsuarios = async () => {
+        try {
+            const data = await apiGet("/usuarios");
+            setAllUsuarios(data || []);
+        } catch (e) {
+            console.error("Error loading usuarios:", e);
+        }
+    };
+
+    const filteredAbogadosModal = allAbogados.filter(a =>
         a.nombre.toLowerCase().includes(abogadoSearchModal.toLowerCase()) &&
         !(completeModal.abogadosIds || []).includes(a.id)
     );
 
-    const filteredAbogadosEdit = allAbogados.filter(a => 
+    const filteredAbogadosEdit = allAbogados.filter(a =>
         a.nombre.toLowerCase().includes(abogadoSearchEdit.toLowerCase()) &&
         !(infoForm.abogadosIds || []).includes(a.id)
     );
@@ -250,6 +321,7 @@ export default function SiniestroDetailPage() {
     useEffect(() => {
         loadCaso();
         loadAbogados();
+        loadUsuarios();
     }, [id]);
 
     useEffect(() => {
@@ -275,6 +347,7 @@ export default function SiniestroDetailPage() {
             const full = await apiGet(`/siniestros/${id}`);
             setSelected(full);
             hydrateFactForm(full);
+            return full;
         } catch (e) {
             setError("Error cargando expediente.");
         } finally {
@@ -317,6 +390,7 @@ export default function SiniestroDetailPage() {
             estado: full.estado || "",
             abogadosAsignados: full.abogadosAsignados || "",
             abogadosIds: full.abogados?.map(a => a.id) || [],
+            encargadoPresupuestoId: full.encargadoPresupuestoId || "",
         });
     };
 
@@ -328,7 +402,7 @@ export default function SiniestroDetailPage() {
             if (opts.file) fd.append("file", opts.file);
             if (opts.fechaRecepcion) fd.append("fechaRecepcion", opts.fechaRecepcion);
             if (opts.observaciones) fd.append("observaciones", opts.observaciones);
-            
+
             await apiPostForm(`/siniestros/${id}/gestiones/${g.id}/completar`, fd);
             await reloadSelected();
         } catch (e) {
@@ -457,6 +531,19 @@ export default function SiniestroDetailPage() {
         }
     };
 
+    const updateBudgetAssignee = async (newId) => {
+        setBusy(true);
+        try {
+            await apiPatch(`/siniestros/${id}/info`, { encargadoPresupuestoId: newId });
+            await reloadSelected();
+        } catch (e) {
+            console.error("Error al reasignar encargado de presupuesto:", e);
+            alert(e?.response?.data?.error || e?.message || "Error al reasignar");
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const openGenerarWord = () => {
         setSelectedFotosWord(selected?.fotos?.map((f) => f.id) || []);
         setOpenWordModal(true);
@@ -469,7 +556,7 @@ export default function SiniestroDetailPage() {
             const res = await api.get(`/casos/exportar/excel?id=${id}`, {
                 responseType: 'blob'
             });
-            
+
             const url = window.URL.createObjectURL(new Blob([res.data]));
             const link = document.createElement('a');
             link.href = url;
@@ -571,13 +658,189 @@ export default function SiniestroDetailPage() {
             }
 
             await apiPostForm(`/casos/${id}/enviar-correo-adjuntos`, fd);
+
+            if (emailGestion) {
+                const completeFd = new FormData();
+                completeFd.append("tipoDoc", "ENVIO_INFORMACION_LIQUIDADOR");
+                completeFd.append("tituloDoc", emailGestion.titulo || "Despacho antecedentes");
+                completeFd.append("observaciones", "Antecedentes despachados al liquidador vía correo.");
+                if (emailForm.files) {
+                    Array.from(emailForm.files).forEach(file => {
+                        completeFd.append("file", file);
+                    });
+                }
+                await apiPostForm(`/siniestros/${id}/gestiones/${emailGestion.id}/completar`, completeFd);
+                setEmailGestion(null);
+            }
+
             setOpenEmail(false);
             setInfoSaved("Email enviado exitosamente.");
             setEmailForm({ destinatarios: "", cc: "", asunto: "", mensaje: "", files: [], adjuntosPath: [] });
+            await reloadSelected();
         } catch (e) {
             setError("Error enviando correo.");
         } finally {
             setBusy(false);
+        }
+    };
+
+    const saveLiquidadorForm = async () => {
+        if (!liquidadorFormModal.nombreLiquidador?.trim() || !liquidadorFormModal.emailLiquidador?.trim()) {
+            setError("Debes ingresar el nombre y correo del liquidador.");
+            return;
+        }
+        setBusy(true);
+        try {
+            await apiPatch(`/siniestros/${id}/info`, {
+                nombreLiquidador: liquidadorFormModal.nombreLiquidador.trim(),
+                emailLiquidador: liquidadorFormModal.emailLiquidador.trim()
+            });
+            const updated = await reloadSelected();
+            const currentGestion = liquidadorFormModal.gestion;
+            setLiquidadorFormModal({ open: false, nombreLiquidador: "", emailLiquidador: "", gestion: null });
+            if (currentGestion) {
+                const allDocs = updated?.documentos?.map(d => d.urlArchivo) || [];
+                setEmailGestion(currentGestion);
+                setEmailForm({
+                    destinatarios: updated?.emailLiquidador || "",
+                    cc: "",
+                    asunto: `SINIESTRO ${updated?.numeroSiniestro || ""}`,
+                    mensaje: `Estimado ${updated?.nombreLiquidador || "Liquidador"},\n\nAdjunto enviamos antecedentes para el proceso de liquidación del siniestro N° ${updated?.numeroSiniestro || ""}.\n\nQuedamos a su disposición.`,
+                    files: [],
+                    adjuntosPath: allDocs
+                });
+                setOpenEmail(true);
+            }
+        } catch (e) {
+            setError(e?.response?.data?.error || e?.message || "Error guardando liquidador.");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const registrarRechazoPropuesta = async () => {
+        if (!rechazoPropuestaModal.observaciones?.trim()) {
+            setError("Debes ingresar las observaciones del rechazo.");
+            return;
+        }
+        setBusy(true);
+        try {
+            const obs = rechazoPropuestaModal.observaciones.trim();
+            if (rechazoPropuestaModal.file) {
+                const fd = new FormData();
+                fd.append("tipo", "OTRO");
+                fd.append("titulo", `Correo Rechazo: ${rechazoPropuestaModal.file.name}`);
+                fd.append("file", rechazoPropuestaModal.file);
+                await apiPostForm(`/siniestros/${id}/documentos`, fd);
+            }
+
+            await apiPost(`/siniestros/${id}/bitacora`, {
+                titulo: "Propuesta de Liquidación Rechazada",
+                detalle: obs
+            });
+            if (rechazoPropuestaModal.gestion) {
+                await apiPatch(`/siniestros/${id}/gestiones/${rechazoPropuestaModal.gestion.id}`, {
+                    observaciones: `Propuesta rechazada: ${obs}`
+                });
+            }
+            setRechazoPropuestaModal({ open: false, observaciones: "", file: null, gestion: null });
+            await reloadSelected();
+            setInfoSaved("Rechazo registrado con éxito.");
+            setTimeout(() => setInfoSaved(null), 2000);
+        } catch (e) {
+            setError(e?.response?.data?.error || e?.message || "Error al registrar rechazo.");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const viewRejection = async (doc) => {
+        setSelectedRejectionDoc(doc);
+        setEmlParsed({ loading: true });
+        setOpenRejectionViewer(true);
+        try {
+            const resp = await fetch(fileUrl(doc.urlArchivo));
+            const text = await resp.text();
+
+            // Separar cabeceras y cuerpo
+            const parts = text.split(/\r?\n\r?\n/);
+            const headerLines = parts[0]?.split(/\r?\n/) || [];
+            const bodyContent = parts.slice(1).join("\n\n");
+
+            const headers = {};
+            let lastKey = null;
+            for (const line of headerLines) {
+                if (line.startsWith(" ") || line.startsWith("\t")) {
+                    if (lastKey) {
+                        headers[lastKey] += " " + line.trim();
+                    }
+                } else {
+                    const idx = line.indexOf(":");
+                    if (idx !== -1) {
+                        const key = line.slice(0, idx).trim().toLowerCase();
+                        const val = line.slice(idx + 1).trim();
+                        headers[key] = val;
+                        lastKey = key;
+                    }
+                }
+            }
+
+            const from = headers["from"] || "";
+            const to = headers["to"] || "";
+            const subject = headers["subject"] || "(Sin Asunto)";
+            const date = headers["date"] || "";
+            const contentType = headers["content-type"] || "";
+
+            let body = "";
+            let isHtml = false;
+
+            if (contentType.includes("multipart")) {
+                const boundaryMatch = contentType.match(/boundary="?([^";\s]+)"?/);
+                const boundary = boundaryMatch ? boundaryMatch[1] : null;
+                if (boundary) {
+                    const subParts = bodyContent.split("--" + boundary);
+                    const htmlPart = subParts.find(p => p.toLowerCase().includes("content-type: text/html"));
+                    if (htmlPart) {
+                        const subHeaderAndBody = htmlPart.split(/\r?\n\r?\n/);
+                        body = subHeaderAndBody.slice(1).join("\n\n").trim();
+                        if (body.endsWith("--")) body = body.slice(0, -2).trim();
+                        isHtml = true;
+                    } else {
+                        const plainPart = subParts.find(p => p.toLowerCase().includes("content-type: text/plain"));
+                        if (plainPart) {
+                            const subHeaderAndBody = plainPart.split(/\r?\n\r?\n/);
+                            body = subHeaderAndBody.slice(1).join("\n\n").trim();
+                            if (body.endsWith("--")) body = body.slice(0, -2).trim();
+                            isHtml = false;
+                        }
+                    }
+                }
+            } else {
+                body = bodyContent;
+                isHtml = contentType.includes("text/html");
+            }
+
+            // Si por alguna razón no se encontró contenido estructurado, mostrar el texto crudo
+            if (!body.trim()) {
+                body = bodyContent;
+                isHtml = false;
+            }
+
+            setEmlParsed({
+                loading: false,
+                from,
+                to,
+                subject,
+                date,
+                body,
+                isHtml
+            });
+        } catch (e) {
+            setEmlParsed({
+                loading: false,
+                error: true,
+                body: "No se pudo cargar el contenido del archivo EML."
+            });
         }
     };
 
@@ -691,6 +954,7 @@ export default function SiniestroDetailPage() {
             montoPropuesta: "",
             montoIndemnizacion: "",
             impugnacionAceptada: true,
+            quiereDemanda: true,
             abogadosAsignados: "",
             abogadosIds: [],
         });
@@ -704,7 +968,7 @@ export default function SiniestroDetailPage() {
             fd.append("tituloDoc", completeModal.tituloDoc);
             fd.append("observaciones", completeModal.observaciones);
             if (completeModal.fechaRecepcion) fd.append("fechaRecepcion", completeModal.fechaRecepcion);
-            
+
             // Soporte para múltiples archivos
             if (completeModal.files && completeModal.files.length > 0) {
                 completeModal.files.forEach(f => {
@@ -713,7 +977,7 @@ export default function SiniestroDetailPage() {
             } else if (completeModal.file) {
                 fd.append("file", completeModal.file);
             }
-            
+
             // Lógica específica
             if (completeModal.gestion.tipo === "RECEPCION_PROPUESTA") {
                 fd.append("aceptado", completeModal.aceptado);
@@ -730,8 +994,11 @@ export default function SiniestroDetailPage() {
                 const showImpugnacionFields = completeModal.gestion.tipo === "IMPUGNACION" || completeModal.impugnado;
                 if (showImpugnacionFields) {
                     fd.append("impugnacionAceptada", completeModal.impugnacionAceptada);
-                    if (!completeModal.impugnacionAceptada && completeModal.abogadosIds && completeModal.abogadosIds.length > 0) {
-                        fd.append("abogadosIds", JSON.stringify(completeModal.abogadosIds));
+                    if (completeModal.gestion.tipo === "IMPUGNACION" && !completeModal.impugnacionAceptada) {
+                        fd.append("quiereDemanda", completeModal.quiereDemanda);
+                        if (completeModal.quiereDemanda && completeModal.abogadosIds && completeModal.abogadosIds.length > 0) {
+                            fd.append("abogadosIds", JSON.stringify(completeModal.abogadosIds));
+                        }
                     }
                 }
             }
@@ -740,7 +1007,7 @@ export default function SiniestroDetailPage() {
             }
 
             await apiPostForm(`/siniestros/${id}/gestiones/${completeModal.gestion.id}/completar`, fd);
-            setCompleteModal({ open: false, gestion: null, file: null, files: [], aceptado: true, impugnado: false, montoPresupuesto: "", montoPropuesta: "", montoIndemnizacion: "", impugnacionAceptada: true, abogadosAsignados: "", abogadosIds: [] });
+            setCompleteModal({ open: false, gestion: null, file: null, files: [], aceptado: true, impugnado: false, montoPresupuesto: "", montoPropuesta: "", montoIndemnizacion: "", impugnacionAceptada: true, quiereDemanda: true, abogadosAsignados: "", abogadosIds: [] });
             await reloadSelected();
         } catch (e) {
             setError(e?.response?.data?.error || "Error completando gestión.");
@@ -757,6 +1024,27 @@ export default function SiniestroDetailPage() {
             await reloadSelected();
         } catch (e) {
             setError(e?.response?.data?.error || "Error al cambiar estado a EN JUICIO");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const confirmarResolucionJuicio = async () => {
+        setBusy(true);
+        const resolvedType = confirmJuicioModal.type;
+        try {
+            await apiPatch(`/siniestros/${id}/info`, { estado: resolvedType });
+            setConfirmJuicioModal({ open: false, type: "" });
+            setJuicioResultToast({
+                type: resolvedType,
+                title: resolvedType === "JUICIO_GANADO" ? "🏆 Juicio Ganado Registrado" : "❌ Juicio Perdido Registrado",
+                detail: resolvedType === "JUICIO_GANADO"
+                    ? "Se ha registrado con éxito la resolución del juicio como GANADO para este cliente."
+                    : "Se ha registrado la resolución del juicio como PERDIDO para este cliente."
+            });
+            await reloadSelected();
+        } catch (e) {
+            setError(e?.response?.data?.error || "Error al actualizar resolución del juicio");
         } finally {
             setBusy(false);
         }
@@ -851,7 +1139,7 @@ export default function SiniestroDetailPage() {
             if (nuevoPago.file) fd.append("file", nuevoPago.file);
 
             await apiPostForm(`/siniestros/${id}/pagos`, fd);
-            
+
             // ✅ Limpiar el formulario inmediatamente tras el éxito del POST
             setNuevoPago({
                 porcentajeCobro: "",
@@ -914,7 +1202,7 @@ export default function SiniestroDetailPage() {
         try {
             setBusy(true);
             const data = editPago[pagoId];
-            
+
             // Validar límites si el porcentaje cambió
             if (data.porcentajeCobro !== undefined) {
                 const nuevoP = Number(data.porcentajeCobro);
@@ -922,10 +1210,10 @@ export default function SiniestroDetailPage() {
                     setError("El porcentaje no puede ser negativo.");
                     return;
                 }
-                
+
                 const otrosTotal = selected?.pagos?.filter(p => p.id !== pagoId)
-                                            .reduce((acc, p) => acc + (p.porcentajeCobro || 0), 0) || 0;
-                
+                    .reduce((acc, p) => acc + (p.porcentajeCobro || 0), 0) || 0;
+
                 if (otrosTotal + nuevoP > 100.01) {
                     setError(`No se puede actualizar: La suma total excedería el 100% (Quedaría en ${otrosTotal + nuevoP}%).`);
                     return;
@@ -1117,7 +1405,7 @@ export default function SiniestroDetailPage() {
                                                         destinatarios: selected?.emailLiquidador || "",
                                                         cc: "",
                                                         asunto: `Presupuesto y Evidencia - Folio SIN-${String(selected?.folio).padStart(6, "0")}`,
-                                                        mensaje: `Buen día,\n\nSe adjunta el presupuesto y la evidencia fotográfica correspondiente al siniestro SIN-${String(selected?.folio).padStart(6, "0")}.\n\nSaludos.`
+                                                        mensaje: `Buen día,\n\nSe adjunta el presupuesto y la evidencia fotográfica correspondiente al siniestro SIN-${String(selected?.folio).padStart(6, "0")}.\n\nMonto del Presupuesto: ${selected?.montoPresupuesto ? `$${selected.montoPresupuesto.toLocaleString("es-CL")}` : "No especificado"}\n\nSaludos.`
                                                     });
                                                     setSelectedFotosWord(selected?.fotos?.map(f => f.id) || []);
                                                     setOpenBudgetModal(true);
@@ -1129,8 +1417,8 @@ export default function SiniestroDetailPage() {
                                                 Presupuesto
                                             </Button>
                                             {(isOps || userRole === "MASTER" || userRole === "SUPERADMIN") && (
-                                                <Button 
-                                                    variant="ghost" 
+                                                <Button
+                                                    variant="ghost"
                                                     onClick={() => {
                                                         setDesistirForm({
                                                             observaciones: "",
@@ -1219,7 +1507,7 @@ export default function SiniestroDetailPage() {
                                             </div>
                                         </div>
                                         <div className="flex flex-col gap-1.5 rounded-2xl bg-surface-container-lowest/50 p-5 border border-outline-variant/10 shadow-sm transition-all hover:bg-surface-container-lowest md:col-span-2">
-                                            <div className="grid gap-6 md:grid-cols-2">
+                                            <div className="grid gap-6 md:grid-cols-3">
                                                 <div>
                                                     <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">Asesor Asignado</span>
                                                     <div className="mt-2 flex items-center gap-3">
@@ -1241,6 +1529,18 @@ export default function SiniestroDetailPage() {
                                                         <div>
                                                             <div className="text-sm font-black">{selected.inspector?.nombre || selected.asesor?.nombre || "No asignado"}</div>
                                                             <div className="text-[11px] font-medium text-on-surface-variant/60">{selected.inspector?.email || selected.asesor?.email || "—"}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">Encargado de Presupuesto</span>
+                                                    <div className="mt-2 flex items-center gap-3">
+                                                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600">
+                                                            <span className="material-symbols-outlined text-xl">payments</span>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-sm font-black">{selected.encargadoPresupuesto?.nombre || "Carlos de Beer (Por defecto)"}</div>
+                                                            <div className="text-[11px] font-medium text-on-surface-variant/60">{selected.encargadoPresupuesto?.email || "cdebeer@asesoriasasesur.com"}</div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1267,11 +1567,24 @@ export default function SiniestroDetailPage() {
                                                 options={Object.keys(EstadoSiniestroLabel).map(k => ({ value: k, label: EstadoSiniestroLabel[k] }))}
                                             />
                                         </div>
+                                        {["SUPERADMIN", "GERENTE", "MASTER"].includes(userRole) && (
+                                            <div className="sm:col-span-2">
+                                                <Select
+                                                    label="Encargado de Presupuesto"
+                                                    value={infoForm.encargadoPresupuestoId}
+                                                    onChange={v => setInfoForm(p => ({ ...p, encargadoPresupuestoId: v }))}
+                                                    options={[
+                                                        { value: "", label: "Carlos de Beer (Por defecto)" },
+                                                        ...allUsuarios.map(u => ({ value: u.id, label: `${u.nombre} (${u.rol})` }))
+                                                    ]}
+                                                />
+                                            </div>
+                                        )}
                                         <div className="sm:col-span-2 space-y-2">
                                             <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/70 ml-1">
                                                 Abogados Asignados (Demanda)
                                             </label>
-                                            
+
                                             {/* Selected Lawyers Pills */}
                                             <div className="flex flex-wrap gap-2 mb-2">
                                                 {(infoForm.abogadosIds || []).map(id => {
@@ -1280,12 +1593,12 @@ export default function SiniestroDetailPage() {
                                                     return (
                                                         <div key={id} className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-error/10 border border-error/20 text-xs font-bold text-error">
                                                             <span>{abg.nombre}</span>
-                                                            <button 
+                                                            <button
                                                                 type="button"
-                                                                onClick={() => setInfoForm(p => ({ 
-                                                                    ...p, 
-                                                                    abogadosIds: p.abogadosIds.filter(x => x !== id) 
-                                                                }))} 
+                                                                onClick={() => setInfoForm(p => ({
+                                                                    ...p,
+                                                                    abogadosIds: p.abogadosIds.filter(x => x !== id)
+                                                                }))}
                                                                 className="hover:text-error-hover active:scale-95 transition"
                                                             >
                                                                 <span className="material-symbols-outlined text-sm font-black">close</span>
@@ -1302,7 +1615,7 @@ export default function SiniestroDetailPage() {
 
                                             {/* Search Input */}
                                             <div className="relative">
-                                                <input 
+                                                <input
                                                     type="text"
                                                     placeholder="Escribe para buscar o agregar abogado..."
                                                     value={abogadoSearchEdit}
@@ -1416,7 +1729,7 @@ export default function SiniestroDetailPage() {
                                                 <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40 ml-3">Acciones de Flujo / Judiciales</span>
                                                 <div className="flex flex-wrap gap-3">
                                                     {selected.estado === "DEMANDA" && (
-                                                        <button 
+                                                        <button
                                                             disabled={busy}
                                                             onClick={() => setOpenJuicioModal(true)}
                                                             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-primary text-on-primary hover:bg-primary-hover shadow-md transition-all active:scale-95"
@@ -1427,67 +1740,31 @@ export default function SiniestroDetailPage() {
                                                     )}
                                                     {selected.estado === "EN_JUICIO" && (
                                                         <>
-                                                            <button 
+                                                            <button
                                                                 disabled={busy}
-                                                                onClick={async () => {
-                                                                    if (confirm("¿Confirmas la resolución del juicio como GANADO? Esto dará fin al caso.")) {
-                                                                        setBusy(true);
-                                                                        try {
-                                                                            await apiPatch(`/siniestros/${id}/info`, { estado: "JUICIO_GANADO" });
-                                                                            await reloadSelected();
-                                                                        } catch (e) {
-                                                                            setError(e?.response?.data?.error || "Error al actualizar estado");
-                                                                        } finally {
-                                                                            setBusy(false);
-                                                                        }
-                                                                    }
-                                                                }}
-                                                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-tertiary text-on-tertiary hover:bg-tertiary-hover shadow-md transition-all active:scale-95"
+                                                                onClick={() => setConfirmJuicioModal({ open: true, type: "JUICIO_GANADO" })}
+                                                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-tertiary text-on-tertiary hover:bg-tertiary-hover shadow-md transition-all active:scale-95 cursor-pointer"
                                                             >
                                                                 <span className="material-symbols-outlined text-sm">emoji_events</span>
                                                                 🏆 Juicio Ganado
                                                             </button>
-                                                            <button 
+                                                            <button
                                                                 disabled={busy}
-                                                                onClick={async () => {
-                                                                    if (confirm("¿Confirmas la resolución del juicio como PERDIDO? Esto dará fin al caso.")) {
-                                                                        setBusy(true);
-                                                                        try {
-                                                                            await apiPatch(`/siniestros/${id}/info`, { estado: "JUICIO_PERDIDO" });
-                                                                            await reloadSelected();
-                                                                        } catch (e) {
-                                                                            setError(e?.response?.data?.error || "Error al actualizar estado");
-                                                                        } finally {
-                                                                            setBusy(false);
-                                                                        }
-                                                                    }
-                                                                }}
-                                                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-error text-on-error hover:bg-error-hover shadow-md transition-all active:scale-95"
+                                                                onClick={() => setConfirmJuicioModal({ open: true, type: "JUICIO_PERDIDO" })}
+                                                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-error text-on-error hover:bg-error-hover shadow-md transition-all active:scale-95 cursor-pointer"
                                                             >
                                                                 <span className="material-symbols-outlined text-sm">gavel</span>
                                                                 ❌ Juicio Perdido
                                                             </button>
                                                         </>
                                                     )}
-                                                    <button 
+                                                    <button
                                                         disabled={busy}
-                                                        onClick={async () => {
-                                                            if (confirm("¿Estás seguro de que deseas DESISTIR de este caso? Esta acción dará fin al caso.")) {
-                                                                setBusy(true);
-                                                                try {
-                                                                    await apiPatch(`/siniestros/${id}/info`, { estado: "DESISTIMIENTO" });
-                                                                    await reloadSelected();
-                                                                } catch (e) {
-                                                                    setError(e?.response?.data?.error || "Error al registrar desistimiento");
-                                                                } finally {
-                                                                    setBusy(false);
-                                                                }
-                                                            }
-                                                        }}
-                                                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-surface-container-highest text-on-surface hover:bg-outline-variant/20 border border-outline-variant/10 shadow-sm transition-all active:scale-95 ml-auto"
+                                                        onClick={() => setConfirmDesistirModal(true)}
+                                                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border-2 border-error text-error hover:bg-error/10 bg-error/5 shadow-lg shadow-error/10 hover:shadow-error/20 transition-all duration-200 active:scale-95 ml-auto"
                                                     >
                                                         <span className="material-symbols-outlined text-sm">block</span>
-                                                        🚫 Desistir Caso
+                                                        Desistir Caso
                                                     </button>
                                                 </div>
                                             </div>
@@ -1520,10 +1797,14 @@ export default function SiniestroDetailPage() {
                                     desc="Progreso cronológico del caso y hitos de liquidación"
                                     right={
                                         <div className="flex gap-2">
-                                            <Button variant="secondary" onClick={impugnar} disabled={busy} className="h-10 border-error/20 text-error hover:bg-error/5 text-xs">
-                                                <span className="material-symbols-outlined text-lg">warning</span>
+                                            <button
+                                                onClick={impugnar}
+                                                disabled={busy}
+                                                className="h-10 px-4 rounded-xl text-xs font-black uppercase tracking-wider border-2 border-amber-500 text-amber-500 hover:bg-amber-500/10 bg-amber-500/5 shadow-lg shadow-amber-500/10 hover:shadow-amber-500/20 transition-all duration-200 active:scale-95 flex items-center gap-1.5"
+                                            >
+                                                <span className="material-symbols-outlined text-sm">warning</span>
                                                 Impugnar Informe
-                                            </Button>
+                                            </button>
                                         </div>
                                     }
                                 >
@@ -1551,13 +1832,20 @@ export default function SiniestroDetailPage() {
                                                         const isDone = g.estado === "COMPLETADA";
                                                         const isBlocked = g.estado === "BLOQUEADA";
                                                         const isPending = g.estado === "PENDIENTE" || g.estado === "EN_PROGRESO";
-                                                        
+
                                                         const tone = isDone ? "green" : isBlocked ? "red" : isPending ? "amber" : "gray";
-                                                        const icon = { 
-                                                            INSPECCION: "hail", 
-                                                            PRESUPUESTO: "request_quote", 
-                                                            DESPACHO_ANTECEDENTES_LIQUIDADOR: "send", 
-                                                            RECEPCION_PROPUESTA: "fact_check", 
+                                                        const isBudget = g.tipo === "PRESUPUESTO";
+                                                        const canComplete = !isBudget || (
+                                                            userRole === "SUPERADMIN" ||
+                                                            userRole === "MASTER" ||
+                                                            session?.user?.email === "cdebeer@asesoriasasesur.com" ||
+                                                            (selected?.encargadoPresupuestoId && selected.encargadoPresupuestoId === userId)
+                                                        );
+                                                        const icon = {
+                                                            INSPECCION: "hail",
+                                                            PRESUPUESTO: "request_quote",
+                                                            DESPACHO_ANTECEDENTES_LIQUIDADOR: "send",
+                                                            RECEPCION_PROPUESTA: "fact_check",
                                                             INFORME_FINAL: "description",
                                                             IMPUGNACION: "gavel",
                                                             CIERRE: "task_alt",
@@ -1575,16 +1863,18 @@ export default function SiniestroDetailPage() {
                                                                 </div>
 
                                                                 {/* Card de Gestión */}
-                                                                <div 
+                                                                <div
                                                                     onClick={() => {
-                                                                        if (isPending && !isBlocked) openCompletarGestion(g);
+                                                                        if (isPending && !isBlocked && canComplete) openCompletarGestion(g);
                                                                     }}
                                                                     className={cls(
-                                                                        "rounded-[2.5rem] border p-8 shadow-sm transition-all duration-500 cursor-pointer",
-                                                                        isDone 
-                                                                            ? "border-tertiary/10 bg-surface-container-low/40 hover:shadow-xl hover:shadow-tertiary/5" 
+                                                                        "rounded-[2.5rem] border p-8 shadow-sm transition-all duration-500",
+                                                                        isDone
+                                                                            ? "border-tertiary/10 bg-surface-container-low/40 hover:shadow-xl hover:shadow-tertiary/5"
                                                                             : isPending && !isBlocked
-                                                                                ? "border-primary/20 bg-surface shadow-lg hover:shadow-primary/10 hover:-translate-y-1"
+                                                                                ? canComplete
+                                                                                    ? "border-primary/20 bg-surface shadow-lg hover:shadow-primary/10 hover:-translate-y-1 cursor-pointer"
+                                                                                    : "border-primary/10 bg-surface/80 opacity-80"
                                                                                 : "border-outline-variant/10 bg-surface-container-lowest/50 opacity-60"
                                                                     )}
                                                                 >
@@ -1633,12 +1923,12 @@ export default function SiniestroDetailPage() {
 
                                                                         <div className="flex flex-col items-end gap-3 shrink-0">
                                                                             <Pill tone={tone} className="px-4 py-1.5 text-[11px]">{EstadoGestionLabel[g.estado]}</Pill>
-                                                                            
+
                                                                             {isDone && g.documentoRelacionado && (
                                                                                 <div className="flex items-center gap-2">
-                                                                                    <a 
-                                                                                        href={fileUrl(g.documentoRelacionado.urlArchivo)} 
-                                                                                        target="_blank" 
+                                                                                    <a
+                                                                                        href={fileUrl(g.documentoRelacionado.urlArchivo)}
+                                                                                        target="_blank"
                                                                                         rel="noreferrer"
                                                                                         onClick={e => e.stopPropagation()}
                                                                                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container-high border border-outline-variant/10 text-[11px] font-black text-primary hover:bg-primary hover:text-on-primary transition-all shadow-sm"
@@ -1675,8 +1965,8 @@ export default function SiniestroDetailPage() {
                                                                                 </div>
                                                                             )}
 
-                                                                            {isPending && !isBlocked && (
-                                                                                <Button 
+                                                                            {isPending && !isBlocked && canComplete && g.tipo !== "DESPACHO_ANTECEDENTES_LIQUIDADOR" && (
+                                                                                <Button
                                                                                     onClick={(e) => {
                                                                                         e.stopPropagation();
                                                                                         openCompletarGestion(g);
@@ -1691,50 +1981,165 @@ export default function SiniestroDetailPage() {
 
                                                                     {/* Lógica Específica por Tipo de Gestión (si está pendiente) */}
                                                                     {isPending && !isBlocked && g.tipo === "PRESUPUESTO" && (
-                                                                        <div className="mt-6 pt-6 border-t border-outline-variant/10 flex flex-wrap gap-3">
-                                                                            <Button 
-                                                                                variant="secondary" 
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    setEmailForm(p => ({
-                                                                                        ...p,
-                                                                                        asunto: `Presupuesto Disponible - Siniestro SIN-${String(selected.folio).padStart(6, "0")}`,
-                                                                                        mensaje: `Estimado Asesor,\n\nSe ha cargado el presupuesto para el siniestro del cliente ${selected.nombreCliente}. Por favor, revisar en plataforma.\n\nSaludos.`
-                                                                                    }));
-                                                                                    setOpenEmail(true);
-                                                                                }}
-                                                                                className="h-9 px-4 text-[10px]"
-                                                                            >
-                                                                                <span className="material-symbols-outlined text-sm">alternate_email</span>
-                                                                                Avisar al Asesor
-                                                                            </Button>
+                                                                        <div className="mt-6 pt-6 border-t border-outline-variant/10 flex flex-wrap items-center justify-between gap-4">
+                                                                            <div className="flex flex-wrap gap-3">
+                                                                                <Button
+                                                                                    variant="secondary"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setEmailForm(p => ({
+                                                                                            ...p,
+                                                                                            asunto: `Presupuesto Disponible - Siniestro SIN-${String(selected.folio).padStart(6, "0")}`,
+                                                                                            mensaje: `Estimado Asesor,\n\nSe ha cargado el presupuesto para el siniestro del cliente ${selected.nombreCliente}. Por favor, revisar en plataforma.\n\nMonto del Presupuesto: ${selected.montoPresupuesto ? `$${selected.montoPresupuesto.toLocaleString("es-CL")}` : "No especificado"}\n\nSaludos.`
+                                                                                        }));
+                                                                                        setOpenEmail(true);
+                                                                                    }}
+                                                                                    className="h-9 px-4 text-[10px]"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-sm">alternate_email</span>
+                                                                                    Avisar al Asesor
+                                                                                </Button>
+                                                                            </div>
+
+                                                                            {(userRole === "SUPERADMIN" || userRole === "MASTER" || session?.user?.email === "cdebeer@asesoriasasesur.com") && (
+                                                                                <div
+                                                                                    onClick={(e) => e.stopPropagation()}
+                                                                                    className="flex items-center gap-3 bg-surface-container-high/50 p-2 px-4 rounded-2xl border border-outline-variant/10 shadow-sm"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-amber-600 text-lg">assignment_ind</span>
+                                                                                    <div className="flex flex-col">
+                                                                                        <span className="text-[9px] font-black uppercase tracking-wider text-on-surface-variant/60">Asignar Encargado Presupuesto</span>
+                                                                                        <select
+                                                                                            value={selected?.encargadoPresupuestoId || ""}
+                                                                                            onChange={async (e) => {
+                                                                                                await updateBudgetAssignee(e.target.value);
+                                                                                            }}
+                                                                                            disabled={busy}
+                                                                                            className="bg-transparent text-xs font-black text-on-surface focus:outline-none cursor-pointer mt-0.5"
+                                                                                        >
+                                                                                            <option value="">Carlos de Beer (Por defecto)</option>
+                                                                                            {allUsuarios.map(u => (
+                                                                                                <option key={u.id} value={u.id}>
+                                                                                                    {u.nombre} ({u.rol})
+                                                                                                </option>
+                                                                                            ))}
+                                                                                        </select>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
                                                                         </div>
                                                                     )}
 
                                                                     {isPending && !isBlocked && g.tipo === "DESPACHO_ANTECEDENTES_LIQUIDADOR" && (
-                                                                        <div className="mt-6 pt-6 border-t border-outline-variant/10 flex flex-wrap gap-3">
-                                                                            <Button 
-                                                                                variant="secondary" 
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    const relatedDocs = selected.documentos?.filter(d => d.tipo === "ENVIO_INFORMACION_LIQUIDADOR") || [];
-                                                                                    setEmailForm({
-                                                                                        destinatarios: selected.emailLiquidador || "",
-                                                                                        cc: "",
-                                                                                        asunto: `Antecedentes Liquidación - Siniestro SIN-${String(selected.folio).padStart(6, "0")}`,
-                                                                                        mensaje: `Estimado ${selected.nombreLiquidador || "Liquidador"},\n\nAdjunto enviamos antecedentes para el proceso de liquidación del siniestro folio ${selected.folio}.\n\nQuedamos a su disposición.`,
-                                                                                        files: [],
-                                                                                        adjuntosPath: relatedDocs.map(d => d.urlArchivo)
-                                                                                    });
-                                                                                    setOpenEmail(true);
-                                                                                }}
-                                                                                className="h-9 px-4 text-[10px]"
-                                                                            >
-                                                                                <span className="material-symbols-outlined text-sm">forward_to_inbox</span>
-                                                                                Despachar Antecedentes
-                                                                            </Button>
+                                                                        <div className="mt-6 pt-6 border-t border-outline-variant/10 flex flex-col gap-4">
+                                                                            {(!selected.nombreLiquidador?.trim() || !selected.emailLiquidador?.trim()) && (
+                                                                                <div className="flex items-center gap-2 text-xs font-bold text-error bg-error/5 p-3 rounded-xl border border-error/10 w-fit">
+                                                                                    <span className="material-symbols-outlined text-sm">warning</span>
+                                                                                    <span>Falta registrar el liquidador (Nombre y Email) en los datos generales.</span>
+                                                                                </div>
+                                                                            )}
+                                                                            <div className="flex flex-wrap gap-3">
+                                                                                <Button
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        if (!selected.nombreLiquidador?.trim() || !selected.emailLiquidador?.trim()) {
+                                                                                            setLiquidadorFormModal({
+                                                                                                open: true,
+                                                                                                nombreLiquidador: selected.nombreLiquidador || "",
+                                                                                                emailLiquidador: selected.emailLiquidador || "",
+                                                                                                gestion: g
+                                                                                            });
+                                                                                            return;
+                                                                                        }
+                                                                                        setEmailGestion(g);
+                                                                                        const allDocs = selected.documentos?.map(d => d.urlArchivo) || [];
+                                                                                        setEmailForm({
+                                                                                            destinatarios: selected.emailLiquidador || "",
+                                                                                            cc: "",
+                                                                                            asunto: `SINIESTRO ${selected.numeroSiniestro || ""}`,
+                                                                                            mensaje: `Estimado ${selected.nombreLiquidador || "Liquidador"},\n\nAdjunto enviamos antecedentes para el proceso de liquidación del siniestro N° ${selected.numeroSiniestro || ""}.\n\nQuedamos a su disposición.`,
+                                                                                            files: [],
+                                                                                            adjuntosPath: allDocs
+                                                                                        });
+                                                                                        setOpenEmail(true);
+                                                                                    }}
+                                                                                    className="h-11 px-6 text-xs shadow-lg shadow-primary/20"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-sm">forward_to_inbox</span>
+                                                                                    ENVIAR ANTECEDENTES
+                                                                                </Button>
+                                                                            </div>
                                                                         </div>
                                                                     )}
+
+                                                                    {isPending && !isBlocked && g.tipo === "RECEPCION_PROPUESTA" && (() => {
+                                                                        const rejections = selected.documentos?.filter(d => d.tipo === "OTRO" && d.titulo?.startsWith("Correo Rechazo:")) || [];
+                                                                        return (
+                                                                            <div className="mt-6 pt-6 border-t border-outline-variant/10 flex flex-wrap gap-3">
+                                                                                <Button
+                                                                                    variant="secondary"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setRechazoPropuestaModal({
+                                                                                            open: true,
+                                                                                            observaciones: "",
+                                                                                            file: null,
+                                                                                            gestion: g
+                                                                                        });
+                                                                                    }}
+                                                                                    className="h-11 px-6 text-xs text-error hover:bg-error/5 hover:text-error border-error/20"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-sm mr-1">cancel</span>
+                                                                                    Rechazar Propuesta
+                                                                                </Button>
+
+                                                                                {rejections.length > 0 && (
+                                                                                    <Button
+                                                                                        variant="secondary"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            const lastDoc = rejections[rejections.length - 1];
+                                                                                            viewRejection(lastDoc);
+                                                                                        }}
+                                                                                        className="h-11 px-6 text-xs text-primary border-primary/20"
+                                                                                    >
+                                                                                        <span className="material-symbols-outlined text-sm mr-1">visibility</span>
+                                                                                        Ver Correo Rechazo
+                                                                                    </Button>
+                                                                                )}
+
+                                                                                {rejections.length >= 2 && (
+                                                                                    <Button
+                                                                                        onClick={async (e) => {
+                                                                                            e.stopPropagation();
+                                                                                            if (confirm("¿Estás seguro de que deseas dar por terminado el proceso de propuesta sin aceptación? Esto desbloqueará las siguientes etapas.")) {
+                                                                                                setBusy(true);
+                                                                                                try {
+                                                                                                    const fd = new FormData();
+                                                                                                    fd.append("tipoDoc", "PROPUESTA_LIQUIDADOR");
+                                                                                                    fd.append("tituloDoc", "Propuesta Rechazada Definitivamente");
+                                                                                                    fd.append("observaciones", "Se finaliza el proceso de propuesta tras múltiples rechazos.");
+                                                                                                    fd.append("aceptado", "false");
+                                                                                                    await apiPostForm(`/siniestros/${id}/gestiones/${g.id}/completar`, fd);
+                                                                                                    await reloadSelected();
+                                                                                                    setInfoSaved("Proceso finalizado.");
+                                                                                                    setTimeout(() => setInfoSaved(null), 2000);
+                                                                                                } catch (err) {
+                                                                                                    setError(err?.response?.data?.error || "Error al finalizar proceso.");
+                                                                                                } finally {
+                                                                                                    setBusy(false);
+                                                                                                }
+                                                                                            }
+                                                                                        }}
+                                                                                        className="h-11 px-6 text-xs bg-amber-600 text-white hover:bg-amber-700 shadow-md border-0"
+                                                                                    >
+                                                                                        <span className="material-symbols-outlined text-sm mr-1">done_all</span>
+                                                                                        Finalizar Sin Aceptación
+                                                                                    </Button>
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })()}
                                                                 </div>
                                                             </div>
                                                         );
@@ -1903,9 +2308,8 @@ export default function SiniestroDetailPage() {
                                                                 <span className="text-[11px] font-black uppercase tracking-wider text-on-surface-variant/60">
                                                                     Reemplazar imagen (opcional)
                                                                 </span>
-                                                                <label className={`flex items-center justify-center gap-3 rounded-xl border-2 border-dashed px-4 py-3 cursor-pointer transition ${
-                                                                    ef.file ? "border-primary/50 bg-primary/5" : "border-outline-variant/30 hover:border-primary/30 hover:bg-primary/5"
-                                                                }`}>
+                                                                <label className={`flex items-center justify-center gap-3 rounded-xl border-2 border-dashed px-4 py-3 cursor-pointer transition ${ef.file ? "border-primary/50 bg-primary/5" : "border-outline-variant/30 hover:border-primary/30 hover:bg-primary/5"
+                                                                    }`}>
                                                                     <input
                                                                         type="file"
                                                                         accept="image/*"
@@ -2014,8 +2418,8 @@ export default function SiniestroDetailPage() {
                                                             <span className="material-symbols-outlined text-xl">swap_horiz</span>
                                                         </button>
                                                     )}
-                                                    <Button 
-                                                        variant="secondary" 
+                                                    <Button
+                                                        variant="secondary"
                                                         onClick={() => {
                                                             setEmailForm({
                                                                 destinatarios: "",
@@ -2026,7 +2430,7 @@ export default function SiniestroDetailPage() {
                                                                 adjuntosPath: [d.urlArchivo]
                                                             });
                                                             setOpenEmail(true);
-                                                        }} 
+                                                        }}
                                                         className="h-11 w-11 rounded-full p-0"
                                                         title="Enviar por correo"
                                                     >
@@ -2051,7 +2455,7 @@ export default function SiniestroDetailPage() {
                                 let daysPassed = 0;
                                 let isDelayed = false;
                                 let showTimer = false;
-                                
+
                                 // Timer general si no se ha cerrado la facturación total
                                 if (informeFinalDate && factForm.estadoFacturacion !== "ENVIADO_CLIENTE" && factForm.estadoFacturacion !== "PAGADO") {
                                     showTimer = true;
@@ -2077,9 +2481,9 @@ export default function SiniestroDetailPage() {
                                             <div className="rounded-[3rem] border border-outline-variant/10 bg-surface-container-high/10 p-10">
                                                 <div className="grid gap-8">
                                                     <div className="grid gap-6 sm:grid-cols-2">
-                                                        <Input label="Indemnización Total del Siniestro (CLP)" type="number" 
-                                                            value={factForm.montoIndemnizacion} 
-                                                            onChange={(v) => setFactForm(prev => ({...prev, montoIndemnizacion: v}))} 
+                                                        <Input label="Indemnización Total del Siniestro (CLP)" type="number"
+                                                            value={factForm.montoIndemnizacion}
+                                                            onChange={(v) => setFactForm(prev => ({ ...prev, montoIndemnizacion: v }))}
                                                         />
                                                         <Select label="Estado Global de Facturación" value={factForm.estadoFacturacion} onChange={v => setFactForm(p => ({ ...p, estadoFacturacion: v }))} options={Object.keys(EstadoFacturacionLabel).map(k => ({ value: k, label: EstadoFacturacionLabel[k] }))} />
                                                     </div>
@@ -2096,7 +2500,7 @@ export default function SiniestroDetailPage() {
                                             {/* Formulario Nuevo Pago */}
                                             <div className="mb-8 rounded-[2.5rem] border border-primary/20 bg-primary/5 p-10">
                                                 <h4 className="text-sm font-black uppercase tracking-widest text-primary mb-6">Registrar Nuevo Cobro</h4>
-                                                
+
                                                 {/* Mensajes de Feedback Localizado */}
                                                 {(pagoErr || pagoSuccess) && (
                                                     <div className={cls(
@@ -2112,7 +2516,7 @@ export default function SiniestroDetailPage() {
                                                             </span>
                                                             <span className="text-sm font-bold opacity-90">{pagoErr || pagoSuccess}</span>
                                                         </div>
-                                                        <button 
+                                                        <button
                                                             onClick={() => { setPagoErr(null); setPagoSuccess(null); }}
                                                             className="ml-auto opacity-50 hover:opacity-100 transition-opacity"
                                                         >
@@ -2123,18 +2527,18 @@ export default function SiniestroDetailPage() {
 
                                                 <div className="grid gap-6">
                                                     <div className="grid gap-6 sm:grid-cols-3">
-                                                        <Input label="% de Cobro" type="number" value={nuevoPago.porcentajeCobro} 
+                                                        <Input label="% de Cobro" type="number" value={nuevoPago.porcentajeCobro}
                                                             onChange={(v) => {
                                                                 setPagoErr(null); // Limpiar error al tipear
                                                                 let p = Number(v);
                                                                 if (p > 100) p = 100;
                                                                 const m = Number(factForm.montoIndemnizacion);
                                                                 const calc = (m && p) ? Math.trunc(m * (p / 100)) : "";
-                                                                setNuevoPago(prev => ({...prev, porcentajeCobro: v, montoHonorarios: String(calc)}));
-                                                            }} 
+                                                                setNuevoPago(prev => ({ ...prev, porcentajeCobro: v, montoHonorarios: String(calc) }));
+                                                            }}
                                                         />
-                                                        <Input label="Monto Honorarios (Calculado)" type="number" value={nuevoPago.montoHonorarios} 
-                                                            onChange={(v) => setNuevoPago(prev => ({...prev, montoHonorarios: v}))} 
+                                                        <Input label="Monto Honorarios (Calculado)" type="number" value={nuevoPago.montoHonorarios}
+                                                            onChange={(v) => setNuevoPago(prev => ({ ...prev, montoHonorarios: v }))}
                                                         />
                                                         <div className="flex flex-col gap-2 justify-center">
                                                             <label className="flex items-center gap-3 cursor-pointer">
@@ -2144,8 +2548,8 @@ export default function SiniestroDetailPage() {
                                                                 )}>
                                                                     <span className="material-symbols-outlined text-[16px] font-bold">check</span>
                                                                 </div>
-                                                                <input 
-                                                                    type="checkbox" 
+                                                                <input
+                                                                    type="checkbox"
                                                                     className="hidden"
                                                                     checked={nuevoPago.estadoFacturacion === 'PAGADO'}
                                                                     onChange={(e) => {
@@ -2163,14 +2567,14 @@ export default function SiniestroDetailPage() {
                                                             </label>
                                                         </div>
                                                     </div>
-                                                    
+
                                                     {nuevoPago.estadoFacturacion === 'PAGADO' && (
                                                         <div className="grid gap-6 sm:grid-cols-2 animate-in fade-in slide-in-from-top-1">
                                                             <Input label="Fecha Pago" type="date" value={nuevoPago.fechaPago} onChange={v => setNuevoPago(p => ({ ...p, fechaPago: v }))} />
                                                         </div>
                                                     )}
                                                     <Input label="Nota del pago (Hito)" value={nuevoPago.notas} onChange={v => setNuevoPago(p => ({ ...p, notas: v }))} placeholder="Ej: Pago hito 1..." />
-                                                    
+
                                                     <div className="space-y-1.5">
                                                         <span className="text-[11px] font-black uppercase tracking-wider text-on-surface-variant/60">Comprobante de pago (Opcional)</span>
                                                         <label className={cls(
@@ -2203,8 +2607,8 @@ export default function SiniestroDetailPage() {
                                                         <span className="text-xs font-black uppercase tracking-widest opacity-60">Total Facturado</span>
                                                         <div className="flex items-center gap-3">
                                                             <div className="w-48 h-2 bg-outline-variant/20 rounded-full overflow-hidden">
-                                                                <div 
-                                                                    className={cls("h-full transition-all", (selected?.pagos?.reduce((acc, p) => acc + (p.porcentajeCobro || 0), 0) || 0) > 100 ? "bg-error" : "bg-primary")} 
+                                                                <div
+                                                                    className={cls("h-full transition-all", (selected?.pagos?.reduce((acc, p) => acc + (p.porcentajeCobro || 0), 0) || 0) > 100 ? "bg-error" : "bg-primary")}
                                                                     style={{ width: `${Math.min(100, selected?.pagos?.reduce((acc, p) => acc + (p.porcentajeCobro || 0), 0) || 0)}%` }}
                                                                 />
                                                             </div>
@@ -2233,7 +2637,7 @@ export default function SiniestroDetailPage() {
                                                         <div key={p.id} className={cls(
                                                             "flex flex-col gap-6 rounded-[2.5rem] border p-8 transition-all",
                                                             enMora ? "border-error/30 bg-error/5" :
-                                                            editing ? "border-primary/40 bg-surface-container-lowest shadow-xl" : "border-outline-variant/10 bg-surface-container-lowest/50 hover:shadow-lg"
+                                                                editing ? "border-primary/40 bg-surface-container-lowest shadow-xl" : "border-outline-variant/10 bg-surface-container-lowest/50 hover:shadow-lg"
                                                         )}>
                                                             <div className="flex gap-6">
                                                                 <div className={cls(
@@ -2242,23 +2646,23 @@ export default function SiniestroDetailPage() {
                                                                 )}>
                                                                     <span className="font-black text-xl">{idx + 1}</span>
                                                                 </div>
-                                                                
+
                                                                 {editing ? (
                                                                     /* MODO EDICIÓN */
                                                                     <div className="flex-1 space-y-6">
                                                                         <div className="grid gap-6 sm:grid-cols-3">
-                                                                            <Input label="% de Cobro" type="number" value={ep.porcentajeCobro} 
-                                                                                onChange={v => setEditPago(prev => ({...prev, [p.id]: {...prev[p.id], porcentajeCobro: v, montoHonorarios: String(Math.trunc(Number(factForm.montoIndemnizacion) * (Number(v)/100)))}}))} 
+                                                                            <Input label="% de Cobro" type="number" value={ep.porcentajeCobro}
+                                                                                onChange={v => setEditPago(prev => ({ ...prev, [p.id]: { ...prev[p.id], porcentajeCobro: v, montoHonorarios: String(Math.trunc(Number(factForm.montoIndemnizacion) * (Number(v) / 100))) } }))}
                                                                             />
-                                                                            <Input label="Monto Honorarios" type="number" value={ep.montoHonorarios} 
-                                                                                onChange={v => setEditPago(prev => ({...prev, [p.id]: {...prev[p.id], montoHonorarios: v}}))} 
+                                                                            <Input label="Monto Honorarios" type="number" value={ep.montoHonorarios}
+                                                                                onChange={v => setEditPago(prev => ({ ...prev, [p.id]: { ...prev[p.id], montoHonorarios: v } }))}
                                                                             />
-                                                                            <Select label="Estado" value={ep.estadoFacturacion} onChange={v => setEditPago(prev => ({...prev, [p.id]: {...prev[p.id], estadoFacturacion: v}}))} options={Object.keys(EstadoFacturacionLabel).map(k => ({ value: k, label: EstadoFacturacionLabel[k] }))} />
+                                                                            <Select label="Estado" value={ep.estadoFacturacion} onChange={v => setEditPago(prev => ({ ...prev, [p.id]: { ...prev[p.id], estadoFacturacion: v } }))} options={Object.keys(EstadoFacturacionLabel).map(k => ({ value: k, label: EstadoFacturacionLabel[k] }))} />
                                                                         </div>
                                                                         <div className="grid gap-6 sm:grid-cols-2">
-                                                                            <Input label="Fecha Pago" type="date" value={toDateInput(ep.fechaPago)} onChange={v => setEditPago(prev => ({...prev, [p.id]: {...prev[p.id], fechaPago: v}}))} />
+                                                                            <Input label="Fecha Pago" type="date" value={toDateInput(ep.fechaPago)} onChange={v => setEditPago(prev => ({ ...prev, [p.id]: { ...prev[p.id], fechaPago: v } }))} />
                                                                         </div>
-                                                                        
+
                                                                         <div className="space-y-1.5">
                                                                             <span className="text-[11px] font-black uppercase tracking-wider text-on-surface-variant/60">
                                                                                 {p.urlComprobante ? "Reemplazar Comprobante" : "Adjuntar Comprobante"}
@@ -2267,7 +2671,7 @@ export default function SiniestroDetailPage() {
                                                                                 "flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-4 cursor-pointer transition",
                                                                                 ep.file ? "border-primary/50 bg-primary/5" : "border-outline-variant/30 hover:border-primary/30 hover:bg-primary/5"
                                                                             )}>
-                                                                                <input type="file" accept="application/pdf,image/*" className="hidden" onChange={e => setEditPago(prev => ({...prev, [p.id]: {...prev[p.id], file: e.target.files?.[0] || null}}))} />
+                                                                                <input type="file" accept="application/pdf,image/*" className="hidden" onChange={e => setEditPago(prev => ({ ...prev, [p.id]: { ...prev[p.id], file: e.target.files?.[0] || null } }))} />
                                                                                 {ep.file ? (
                                                                                     <div className="flex items-center gap-2 text-primary text-xs font-black">
                                                                                         <span className="material-symbols-outlined text-base">check_circle</span>
@@ -2283,14 +2687,14 @@ export default function SiniestroDetailPage() {
                                                                                 )}
                                                                             </label>
                                                                             {ep.file && (
-                                                                                <button onClick={() => setEditPago(prev => ({...prev, [p.id]: {...prev[p.id], file: null}}))} className="text-[10px] font-black text-error/60 mt-1 uppercase tracking-wider hover:text-error">✕ Quitar selección</button>
+                                                                                <button onClick={() => setEditPago(prev => ({ ...prev, [p.id]: { ...prev[p.id], file: null } }))} className="text-[10px] font-black text-error/60 mt-1 uppercase tracking-wider hover:text-error">✕ Quitar selección</button>
                                                                             )}
                                                                         </div>
-                                                                        <Input label="Notas" value={ep.notas} onChange={v => setEditPago(prev => ({...prev, [p.id]: {...prev[p.id], notas: v}}))} />
-                                                                        
+                                                                        <Input label="Notas" value={ep.notas} onChange={v => setEditPago(prev => ({ ...prev, [p.id]: { ...prev[p.id], notas: v } }))} />
+
                                                                         <div className="flex justify-end gap-2">
                                                                             <Button variant="secondary" onClick={() => setEditPago(prev => {
-                                                                                const copy = {...prev};
+                                                                                const copy = { ...prev };
                                                                                 delete copy[p.id];
                                                                                 return copy;
                                                                             })}>Cancelar</Button>
@@ -2315,7 +2719,7 @@ export default function SiniestroDetailPage() {
                                                                                     <div className="flex flex-col gap-1">
                                                                                         <span className={cls("text-sm font-bold",
                                                                                             p.estadoFacturacion === 'PAGADO' ? 'text-primary' :
-                                                                                            p.estadoFacturacion === 'ENVIADO_CLIENTE' ? 'text-amber-500' : 'text-on-surface-variant'
+                                                                                                p.estadoFacturacion === 'ENVIADO_CLIENTE' ? 'text-amber-500' : 'text-on-surface-variant'
                                                                                         )}>
                                                                                             {EstadoFacturacionLabel[p.estadoFacturacion] || '—'}
                                                                                         </span>
@@ -2350,11 +2754,11 @@ export default function SiniestroDetailPage() {
                                                                                     )}
                                                                                 </div>
                                                                             </div>
-                                                                            
+
                                                                             <div className="flex items-center gap-2">
                                                                                 {p.estadoFacturacion !== 'PAGADO' && (
-                                                                                    <button 
-                                                                                        onClick={() => setConfirmPago(prev => ({...prev, [p.id]: { fechaPago: new Date().toISOString().slice(0, 10) }}))}
+                                                                                    <button
+                                                                                        onClick={() => setConfirmPago(prev => ({ ...prev, [p.id]: { fechaPago: new Date().toISOString().slice(0, 10) } }))}
                                                                                         title="Marcar como pagado"
                                                                                         className={cls(
                                                                                             "h-10 w-10 flex items-center justify-center rounded-full transition-all shadow-sm",
@@ -2366,15 +2770,15 @@ export default function SiniestroDetailPage() {
                                                                                         </span>
                                                                                     </button>
                                                                                 )}
-                                                                                <button 
-                                                                                    onClick={() => setEditPago(prev => ({...prev, [p.id]: {...p}}))}
+                                                                                <button
+                                                                                    onClick={() => setEditPago(prev => ({ ...prev, [p.id]: { ...p } }))}
                                                                                     title="Editar registro"
                                                                                     className="h-10 w-10 flex items-center justify-center rounded-full bg-surface-container-high text-on-surface hover:bg-primary/10 hover:text-primary transition-all"
                                                                                 >
                                                                                     <span className="material-symbols-outlined text-xl">edit</span>
                                                                                 </button>
-                                                                                <button 
-                                                                                    onClick={() => removePagoCaso(p.id)} 
+                                                                                <button
+                                                                                    onClick={() => removePagoCaso(p.id)}
                                                                                     title="Eliminar"
                                                                                     className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-error/10 text-error transition-colors"
                                                                                 >
@@ -2390,25 +2794,25 @@ export default function SiniestroDetailPage() {
                                                                                     <span className="text-[10px] opacity-60">Indica la fecha real en que el cliente realizó este pago para tus registros administrativos.</span>
                                                                                 </div>
                                                                                 <div className="flex items-center gap-4">
-                                                                                    <input 
-                                                                                        type="date" 
+                                                                                    <input
+                                                                                        type="date"
                                                                                         className="bg-surface-container-lowest border border-outline-variant/20 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-primary outline-none"
                                                                                         value={confirmPago[p.id].fechaPago}
-                                                                                        onChange={e => setConfirmPago(prev => ({...prev, [p.id]: { fechaPago: e.target.value }}))}
+                                                                                        onChange={e => setConfirmPago(prev => ({ ...prev, [p.id]: { fechaPago: e.target.value } }))}
                                                                                     />
                                                                                     <div className="flex gap-2">
-                                                                                        <button 
+                                                                                        <button
                                                                                             onClick={() => {
                                                                                                 updatePagoStatus(p.id, 'PAGADO', { fechaPago: confirmPago[p.id].fechaPago });
-                                                                                                setConfirmPago(prev => { const n = {...prev}; delete n[p.id]; return n; });
+                                                                                                setConfirmPago(prev => { const n = { ...prev }; delete n[p.id]; return n; });
                                                                                             }}
                                                                                             className="px-4 py-2 bg-primary text-on-primary rounded-xl text-xs font-black shadow-sm hover:shadow-md transition-all flex items-center gap-2"
                                                                                         >
                                                                                             <span className="material-symbols-outlined text-sm">check</span>
                                                                                             Confirmar Pago
                                                                                         </button>
-                                                                                        <button 
-                                                                                            onClick={() => setConfirmPago(prev => { const n = {...prev}; delete n[p.id]; return n; })}
+                                                                                        <button
+                                                                                            onClick={() => setConfirmPago(prev => { const n = { ...prev }; delete n[p.id]; return n; })}
                                                                                             className="px-4 py-2 bg-surface-container-high text-on-surface rounded-xl text-xs font-black hover:bg-surface-container-highest transition-all"
                                                                                         >
                                                                                             Cancelar
@@ -2446,8 +2850,8 @@ export default function SiniestroDetailPage() {
                         <Input label="Nombre del Archivo" value={completeModal.tituloDoc} onChange={v => setCompleteModal(p => ({ ...p, tituloDoc: v }))} />
                         {completeModal.gestion?.tipo === "PRESUPUESTO" && (
                             <div className="mt-4 p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20">
-                                <Input 
-                                    label="Monto del Presupuesto ($)" 
+                                <Input
+                                    label="Monto del Presupuesto ($)"
                                     type="number"
                                     placeholder="Ej: 1250000"
                                     value={completeModal.montoPresupuesto}
@@ -2464,19 +2868,42 @@ export default function SiniestroDetailPage() {
                                 <div className="flex items-center gap-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
                                     <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se acepta la propuesta?</span>
                                     <div className="flex gap-2">
-                                        <button onClick={() => setCompleteModal(p => ({ ...p, aceptado: true }))} className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.aceptado ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}>Si, Aceptar</button>
-                                        <button onClick={() => setCompleteModal(p => ({ ...p, aceptado: false }))} className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.aceptado ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}>No, Rechazar</button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCompleteModal(p => ({ ...p, aceptado: true }))}
+                                            className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.aceptado ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}
+                                        >
+                                            Si, Aceptar
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const currentG = completeModal.gestion;
+                                                setCompleteModal(p => ({ ...p, open: false }));
+                                                setRechazoPropuestaModal({
+                                                    open: true,
+                                                    observaciones: "",
+                                                    file: null,
+                                                    gestion: currentG
+                                                });
+                                            }}
+                                            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-error text-on-error hover:bg-error/90 transition"
+                                        >
+                                            No, Rechazar
+                                        </button>
                                     </div>
                                 </div>
-                                <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10">
-                                    <Input 
-                                        label="Monto Ofrecido en la Propuesta ($)" 
-                                        type="number"
-                                        placeholder="Ej: 3450000"
-                                        value={completeModal.montoPropuesta}
-                                        onChange={v => setCompleteModal(p => ({ ...p, montoPropuesta: v }))}
-                                    />
-                                </div>
+                                {completeModal.aceptado && (
+                                    <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10">
+                                        <Input
+                                            label="Monto Aceptado en la Propuesta ($)"
+                                            type="number"
+                                            placeholder="Ej: 3450000"
+                                            value={completeModal.montoPropuesta}
+                                            onChange={v => setCompleteModal(p => ({ ...p, montoPropuesta: v }))}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         )}
                         {completeModal.gestion?.tipo === "INFORME_FINAL" && (
@@ -2484,14 +2911,16 @@ export default function SiniestroDetailPage() {
                                 <div className="flex items-center gap-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
                                     <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se impugna el informe?</span>
                                     <div className="flex gap-2">
-                                        <button 
-                                            onClick={() => setCompleteModal(p => ({ ...p, impugnado: true }))} 
+                                        <button
+                                            type="button"
+                                            onClick={() => setCompleteModal(p => ({ ...p, impugnado: true, tipoDoc: "INFORME_FINAL", tituloDoc: "Informe Final" }))}
                                             className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.impugnado ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}
                                         >
                                             Si, Impugnar
                                         </button>
-                                        <button 
-                                            onClick={() => setCompleteModal(p => ({ ...p, impugnado: false, tipoDoc: "INFORME_FINAL", tituloDoc: "Informe Final" }))} 
+                                        <button
+                                            type="button"
+                                            onClick={() => setCompleteModal(p => ({ ...p, impugnado: false, tipoDoc: "INFORME_FINAL", tituloDoc: "Informe Final" }))}
                                             className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.impugnado ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}
                                         >
                                             No Impugnar
@@ -2499,37 +2928,74 @@ export default function SiniestroDetailPage() {
                                     </div>
                                 </div>
 
-                                {completeModal.impugnado && (
+                                {!completeModal.impugnado && (
+                                    <div className="p-4 rounded-2xl bg-tertiary/5 border border-tertiary/10">
+                                        <Input
+                                            label="Monto Final Acordado ($)"
+                                            type="number"
+                                            placeholder="Ej: 3800000"
+                                            value={completeModal.montoIndemnizacion}
+                                            onChange={v => setCompleteModal(p => ({ ...p, montoIndemnizacion: v }))}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        {completeModal.gestion?.tipo === "IMPUGNACION" && (
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
+                                    <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se acepta la impugnación?</span>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setCompleteModal(p => ({ ...p, impugnacionAceptada: true, tipoDoc: "INFORME_FINAL", tituloDoc: "Informe Final" }))}
+                                            className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.impugnacionAceptada ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}
+                                        >
+                                            Sí, la aceptan
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCompleteModal(p => ({ ...p, impugnacionAceptada: false, tipoDoc: "MANDATO_ASESORIA_NOTARIAL", tituloDoc: "Mandato Asesoría Notarial para juicio" }))}
+                                            className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.impugnacionAceptada ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}
+                                        >
+                                            No, la rechazan
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {!completeModal.impugnacionAceptada && (
                                     <div className="space-y-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
                                         <div className="flex items-center gap-4">
-                                            <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se acepta la impugnación?</span>
+                                            <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Cliente quiere demanda?</span>
                                             <div className="flex gap-2">
-                                                <button 
-                                                    onClick={() => setCompleteModal(p => ({ ...p, impugnacionAceptada: true, tipoDoc: "INFORME_FINAL", tituloDoc: "Informe Final" }))} 
-                                                    className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.impugnacionAceptada ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCompleteModal(p => ({ ...p, quiereDemanda: true, tipoDoc: "MANDATO_ASESORIA_NOTARIAL", tituloDoc: "Mandato Asesoría Notarial para juicio" }))}
+                                                    className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.quiereDemanda ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}
                                                 >
-                                                    Sí, la aceptan
+                                                    Sí, demanda
                                                 </button>
-                                                <button 
-                                                    onClick={() => setCompleteModal(p => ({ ...p, impugnacionAceptada: false, tipoDoc: "MANDATO_ASESORIA_NOTARIAL", tituloDoc: "Mandato Asesoría Notarial para juicio" }))} 
-                                                    className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.impugnacionAceptada ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCompleteModal(p => ({ ...p, quiereDemanda: false, tipoDoc: "INFORME_FINAL", tituloDoc: "Informe Final" }))}
+                                                    className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.quiereDemanda ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}
                                                 >
-                                                    No, la rechazan
+                                                    No demandar
                                                 </button>
                                             </div>
                                         </div>
 
-                                        {!completeModal.impugnacionAceptada && (
+                                        {completeModal.quiereDemanda && (
                                             <div className="space-y-4 p-4 rounded-xl bg-error/5 border border-error/10">
                                                 <p className="text-[10px] font-black uppercase text-error tracking-widest leading-relaxed">
                                                     * Se iniciará demanda judicial. Por favor asigne el/los abogado(s) encargados y suba el Mandato Asesoría Notarial para juicio.
                                                 </p>
-                                                
+
                                                 <div className="space-y-2">
                                                     <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/70 ml-1">
                                                         Asignar Abogado(s) *
                                                     </label>
-                                                    
+
                                                     {/* Selected Lawyers Pills */}
                                                     <div className="flex flex-wrap gap-2 mb-2">
                                                         {(completeModal.abogadosIds || []).map(id => {
@@ -2538,12 +3004,12 @@ export default function SiniestroDetailPage() {
                                                             return (
                                                                 <div key={id} className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-error/10 border border-error/20 text-xs font-bold text-error">
                                                                     <span>{abg.nombre}</span>
-                                                                    <button 
+                                                                    <button
                                                                         type="button"
-                                                                        onClick={() => setCompleteModal(p => ({ 
-                                                                            ...p, 
-                                                                            abogadosIds: p.abogadosIds.filter(x => x !== id) 
-                                                                        }))} 
+                                                                        onClick={() => setCompleteModal(p => ({
+                                                                            ...p,
+                                                                            abogadosIds: p.abogadosIds.filter(x => x !== id)
+                                                                        }))}
                                                                         className="hover:text-error-hover active:scale-95 transition"
                                                                     >
                                                                         <span className="material-symbols-outlined text-sm font-black">close</span>
@@ -2560,7 +3026,7 @@ export default function SiniestroDetailPage() {
 
                                                     {/* Search Input */}
                                                     <div className="relative">
-                                                        <input 
+                                                        <input
                                                             type="text"
                                                             placeholder="Escribe para buscar o agregar abogado..."
                                                             value={abogadoSearchModal}
@@ -2619,143 +3085,10 @@ export default function SiniestroDetailPage() {
                                     </div>
                                 )}
 
-                                {!(completeModal.impugnado && !completeModal.impugnacionAceptada) && (
-                                    <div className="p-4 rounded-2xl bg-tertiary/5 border border-tertiary/10">
-                                        <Input 
-                                            label="Monto Final Acordado ($)" 
-                                            type="number"
-                                            placeholder="Ej: 3800000"
-                                            value={completeModal.montoIndemnizacion}
-                                            onChange={v => setCompleteModal(p => ({ ...p, montoIndemnizacion: v }))}
-                                        />
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        {completeModal.gestion?.tipo === "IMPUGNACION" && (
-                            <div className="space-y-4">
-                                <div className="flex items-center gap-4 p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10">
-                                    <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Se acepta la impugnación?</span>
-                                    <div className="flex gap-2">
-                                        <button 
-                                            type="button"
-                                            onClick={() => setCompleteModal(p => ({ ...p, impugnacionAceptada: true, tipoDoc: "INFORME_FINAL", tituloDoc: "Informe Final" }))} 
-                                            className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", completeModal.impugnacionAceptada ? "bg-tertiary text-on-tertiary" : "bg-surface-container-high text-on-surface-variant opacity-40")}
-                                        >
-                                            Sí, la aceptan
-                                        </button>
-                                        <button 
-                                            type="button"
-                                            onClick={() => setCompleteModal(p => ({ ...p, impugnacionAceptada: false, tipoDoc: "MANDATO_ASESORIA_NOTARIAL", tituloDoc: "Mandato Asesoría Notarial para juicio" }))} 
-                                            className={cls("px-4 py-2 rounded-xl text-[10px] font-black uppercase transition", !completeModal.impugnacionAceptada ? "bg-error text-on-error" : "bg-surface-container-high text-on-surface-variant opacity-40")}
-                                        >
-                                            No, la rechazan
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {!completeModal.impugnacionAceptada && (
-                                    <div className="space-y-4 p-4 rounded-xl bg-error/5 border border-error/10">
-                                        <p className="text-[10px] font-black uppercase text-error tracking-widest leading-relaxed">
-                                            * Se iniciará demanda judicial. Por favor asigne el/los abogado(s) encargados y suba el Mandato Asesoría Notarial para juicio.
-                                        </p>
-                                        
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/70 ml-1">
-                                                Asignar Abogado(s) *
-                                            </label>
-                                            
-                                            {/* Selected Lawyers Pills */}
-                                            <div className="flex flex-wrap gap-2 mb-2">
-                                                {(completeModal.abogadosIds || []).map(id => {
-                                                    const abg = allAbogados.find(a => a.id === id);
-                                                    if (!abg) return null;
-                                                    return (
-                                                        <div key={id} className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-error/10 border border-error/20 text-xs font-bold text-error">
-                                                            <span>{abg.nombre}</span>
-                                                            <button 
-                                                                type="button"
-                                                                onClick={() => setCompleteModal(p => ({ 
-                                                                    ...p, 
-                                                                    abogadosIds: p.abogadosIds.filter(x => x !== id) 
-                                                                }))} 
-                                                                className="hover:text-error-hover active:scale-95 transition"
-                                                            >
-                                                                <span className="material-symbols-outlined text-sm font-black">close</span>
-                                                            </button>
-                                                        </div>
-                                                    );
-                                                })}
-                                                {(completeModal.abogadosIds || []).length === 0 && (
-                                                    <span className="text-[10px] font-bold text-on-surface-variant/40 italic uppercase ml-1">
-                                                        Sin abogados asignados
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            {/* Search Input */}
-                                            <div className="relative">
-                                                <input 
-                                                    type="text"
-                                                    placeholder="Escribe para buscar o agregar abogado..."
-                                                    value={abogadoSearchModal}
-                                                    onChange={e => setAbogadoSearchModal(e.target.value)}
-                                                    className="w-full h-11 px-4 rounded-xl border border-outline-variant/30 bg-surface-container-low text-xs font-bold text-on-surface outline-none focus:border-error/50 transition-colors"
-                                                />
-                                                {abogadoSearchModal.trim() !== "" && (
-                                                    <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-outline-variant/20 bg-surface-container shadow-lg p-1 space-y-0.5">
-                                                        {filteredAbogadosModal.map(a => (
-                                                            <button
-                                                                type="button"
-                                                                key={a.id}
-                                                                onClick={() => {
-                                                                    setCompleteModal(p => ({ ...p, abogadosIds: [...(p.abogadosIds || []), a.id] }));
-                                                                    setAbogadoSearchModal("");
-                                                                }}
-                                                                className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-on-surface hover:bg-error/10 hover:text-error transition"
-                                                            >
-                                                                {a.nombre}
-                                                            </button>
-                                                        ))}
-                                                        {filteredAbogadosModal.length === 0 && (
-                                                            <div className="p-2 text-center text-[10px] font-bold text-on-surface-variant/40 uppercase">
-                                                                No se encontraron abogados
-                                                            </div>
-                                                        )}
-                                                        {/* Add/Create option */}
-                                                        {!allAbogados.some(a => a.nombre.toLowerCase() === abogadoSearchModal.trim().toLowerCase()) && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={async () => {
-                                                                    try {
-                                                                        setBusy(true);
-                                                                        const nuevo = await apiPost("/abogados", { nombre: abogadoSearchModal.trim() });
-                                                                        setAllAbogados(p => [...p, nuevo]);
-                                                                        setCompleteModal(p => ({ ...p, abogadosIds: [...(p.abogadosIds || []), nuevo.id] }));
-                                                                        setAbogadoSearchModal("");
-                                                                    } catch (err) {
-                                                                        setError("Error al crear nuevo abogado.");
-                                                                    } finally {
-                                                                        setBusy(false);
-                                                                    }
-                                                                }}
-                                                                className="w-full text-left px-3 py-2.5 rounded-lg text-xs font-black text-error bg-error/5 hover:bg-error/15 border-t border-outline-variant/10 transition flex items-center justify-between"
-                                                            >
-                                                                <span>+ Crear abogado "{abogadoSearchModal.trim()}"</span>
-                                                                <span className="material-symbols-outlined text-sm">add</span>
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
                                 {completeModal.impugnacionAceptada && (
                                     <div className="p-4 rounded-2xl bg-tertiary/5 border border-tertiary/10">
-                                        <Input 
-                                            label="Monto Final Acordado ($)" 
+                                        <Input
+                                            label="Monto Final Acordado ($)"
                                             type="number"
                                             placeholder="Ej: 3800000"
                                             value={completeModal.montoIndemnizacion}
@@ -2769,17 +3102,17 @@ export default function SiniestroDetailPage() {
                         {completeModal.gestion?.tipo === "DESPACHO_ANTECEDENTES_LIQUIDADOR" ? (
                             <div className="space-y-4">
                                 <div className="relative rounded-2xl border-2 border-dashed border-outline-variant/30 p-8 flex flex-col items-center justify-center hover:bg-primary/5 transition-colors cursor-pointer">
-                                    <input 
-                                        type="file" 
-                                        multiple 
+                                    <input
+                                        type="file"
+                                        multiple
                                         onChange={e => {
                                             const selectedFiles = Array.from(e.target.files);
                                             setCompleteModal(p => ({
                                                 ...p,
                                                 files: [...(p.files || []), ...selectedFiles]
                                             }));
-                                        }} 
-                                        className="absolute inset-0 opacity-0 cursor-pointer" 
+                                        }}
+                                        className="absolute inset-0 opacity-0 cursor-pointer"
                                     />
                                     <span className="material-symbols-outlined text-4xl mb-2 text-primary/40">cloud_upload</span>
                                     <span className="text-xs font-black uppercase tracking-widest text-center">
@@ -2789,7 +3122,7 @@ export default function SiniestroDetailPage() {
                                         (Puedes subir más de 1 archivo)
                                     </span>
                                 </div>
-                                
+
                                 {completeModal.files && completeModal.files.length > 0 && (
                                     <div className="space-y-2">
                                         <p className="text-[10px] font-bold tracking-widest uppercase text-on-surface-variant/70">Archivos seleccionados ({completeModal.files.length}):</p>
@@ -2801,7 +3134,7 @@ export default function SiniestroDetailPage() {
                                                         <span className="text-xs font-semibold text-on-surface truncate">{file.name}</span>
                                                         <span className="text-[9px] text-on-surface-variant font-bold opacity-60">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
                                                     </div>
-                                                    <button 
+                                                    <button
                                                         type="button"
                                                         onClick={() => {
                                                             setCompleteModal(p => ({
@@ -2862,10 +3195,10 @@ export default function SiniestroDetailPage() {
             )}
 
             {openJuicioModal && (
-                <Modal 
-                    open={openJuicioModal} 
-                    onClose={() => setOpenJuicioModal(false)} 
-                    title="⚖️ Iniciar Juicio" 
+                <Modal
+                    open={openJuicioModal}
+                    onClose={() => setOpenJuicioModal(false)}
+                    title="⚖️ Iniciar Juicio"
                     footer={
                         <div className="flex gap-2">
                             <Button onClick={() => setOpenJuicioModal(false)} variant="secondary">Cancelar</Button>
@@ -2885,7 +3218,7 @@ export default function SiniestroDetailPage() {
                                 </p>
                             </div>
                         </div>
-                        
+
                         <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/10 text-xs font-medium space-y-2">
                             <div className="flex justify-between">
                                 <span className="text-on-surface-variant/60">Caso:</span>
@@ -2904,11 +3237,309 @@ export default function SiniestroDetailPage() {
                 </Modal>
             )}
 
+            {confirmJuicioModal.open && (
+                <Modal
+                    open={confirmJuicioModal.open}
+                    onClose={() => setConfirmJuicioModal({ open: false, type: "" })}
+                    title={confirmJuicioModal.type === "JUICIO_GANADO" ? "🏆 Confirmar Juicio Ganado" : "❌ Confirmar Juicio Perdido"}
+                    footer={
+                        <div className="flex gap-2">
+                            <Button onClick={() => setConfirmJuicioModal({ open: false, type: "" })} variant="secondary">Cancelar</Button>
+                            <Button
+                                onClick={confirmarResolucionJuicio}
+                                disabled={busy}
+                                className={confirmJuicioModal.type === "JUICIO_GANADO" ? "bg-tertiary hover:bg-tertiary-hover text-on-tertiary" : "bg-error hover:bg-error-hover text-on-error"}
+                            >
+                                {busy ? "Procesando..." : "Confirmar Resolución"}
+                            </Button>
+                        </div>
+                    }
+                >
+                    <div className="space-y-4 text-left p-2">
+                        <div className={`flex items-start gap-3 p-4 rounded-2xl border ${confirmJuicioModal.type === "JUICIO_GANADO" ? "bg-tertiary/10 border-tertiary/20 text-tertiary" : "bg-error/10 border-error/20 text-error"}`}>
+                            <span className="material-symbols-outlined text-2xl mt-0.5">
+                                {confirmJuicioModal.type === "JUICIO_GANADO" ? "emoji_events" : "gavel"}
+                            </span>
+                            <div className="space-y-1">
+                                <h4 className="text-xs font-black uppercase tracking-widest">
+                                    {confirmJuicioModal.type === "JUICIO_GANADO" ? "¿Confirmas la resolución como GANADO?" : "¿Confirmas la resolución como PERDIDO?"}
+                                </h4>
+                                <p className="text-xs text-on-surface-variant/80 leading-relaxed">
+                                    Esta acción es definitiva y finalizará formalmente el flujo de este caso, registrando el resultado como {confirmJuicioModal.type === "JUICIO_GANADO" ? "GANADO" : "PERDIDO"}.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/10 text-xs font-medium space-y-2">
+                            <div className="flex justify-between">
+                                <span className="text-on-surface-variant/60">Caso:</span>
+                                <span className="font-bold text-on-surface">SIN-{String(selected.folio).padStart(6, "0")}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-on-surface-variant/60">Cliente:</span>
+                                <span className="font-bold text-on-surface">{selected.nombreCliente}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-on-surface-variant/60">Resolución a registrar:</span>
+                                <span className={`font-bold uppercase tracking-wider ${confirmJuicioModal.type === "JUICIO_GANADO" ? "text-tertiary" : "text-error"}`}>
+                                    {confirmJuicioModal.type === "JUICIO_GANADO" ? "Juicio Ganado" : "Juicio Perdido"}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
+            {juicioResultToast && (
+                <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[99] w-full max-w-md p-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                    <div className="flex items-start gap-3 rounded-2xl border border-outline-variant/10 bg-surface-container-high p-4 shadow-2xl backdrop-blur-xl">
+                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${juicioResultToast.type === "JUICIO_GANADO" ? "bg-tertiary/10 text-tertiary" : "bg-error/10 text-error"}`}>
+                            <span className="material-symbols-outlined">{juicioResultToast.type === "JUICIO_GANADO" ? "emoji_events" : "gavel"}</span>
+                        </div>
+                        <div className="flex-1 space-y-1">
+                            <h4 className="text-sm font-black text-on-surface">{juicioResultToast.title}</h4>
+                            <p className="text-xs font-medium text-on-surface-variant">{juicioResultToast.detail}</p>
+                        </div>
+                        <button onClick={() => setJuicioResultToast(null)} className="p-1 hover:bg-surface-container-highest rounded-lg transition-colors text-on-surface-variant">
+                            <span className="material-symbols-outlined text-sm">close</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+            {confirmDesistirModal && (
+                <Modal
+                    open={confirmDesistirModal}
+                    onClose={() => setConfirmDesistirModal(false)}
+                    title="Confirmar Desistimiento"
+                    footer={
+                        <div className="flex gap-2 w-full justify-end">
+                            <Button
+                                variant="secondary"
+                                onClick={() => setConfirmDesistirModal(false)}
+                                disabled={busy}
+                            >
+                                Cancelar
+                            </Button>
+                            <Button
+                                onClick={async () => {
+                                    setBusy(true);
+                                    try {
+                                        await apiPatch(`/siniestros/${id}/info`, { estado: "DESISTIMIENTO" });
+                                        await reloadSelected();
+                                        setConfirmDesistirModal(false);
+                                        setDesistirToast({
+                                            title: "Caso Desistido",
+                                            detail: `El caso N° ${selected.numeroSiniestro || selected.folio} ha sido marcado como DESISTIDO.`
+                                        });
+                                    } catch (e) {
+                                        setError(e?.response?.data?.error || "Error al registrar desistimiento");
+                                    } finally {
+                                        setBusy(false);
+                                    }
+                                }}
+                                disabled={busy}
+                                className="bg-error text-on-error hover:bg-error/90 font-black uppercase tracking-wider"
+                            >
+                                {busy ? "Registrando..." : "Confirmar Desistimiento"}
+                            </Button>
+                        </div>
+                    }
+                >
+                    <div className="space-y-4 text-left p-2">
+                        <div className="flex items-start gap-3 p-4 rounded-2xl border bg-error/10 border-error/20 text-error">
+                            <span className="material-symbols-outlined text-2xl mt-0.5">block</span>
+                            <div className="space-y-1">
+                                <h4 className="text-xs font-black uppercase tracking-widest">¿Confirmas el desistimiento del caso?</h4>
+                                <p className="text-xs text-on-surface-variant/80 leading-relaxed">
+                                    Esta acción registrará el siniestro como DESISTIDO, dando por finalizado todo su flujo de trabajo y deteniendo cualquier gestión pendiente.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
+            {desistirToast && (
+                <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[99] w-full max-w-md p-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                    <div className="flex items-start gap-3 rounded-2xl border border-outline-variant/10 bg-surface-container-high p-4 shadow-2xl backdrop-blur-xl">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-error/10 text-error">
+                            <span className="material-symbols-outlined">block</span>
+                        </div>
+                        <div className="flex-1 space-y-1">
+                            <h4 className="text-sm font-black text-on-surface">{desistirToast.title}</h4>
+                            <p className="text-xs font-medium text-on-surface-variant">{desistirToast.detail}</p>
+                        </div>
+                        <button onClick={() => setDesistirToast(null)} className="p-1 hover:bg-surface-container-highest rounded-lg transition-colors text-on-surface-variant">
+                            <span className="material-symbols-outlined text-sm">close</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {liquidadorFormModal.open && (
+                <Modal
+                    open={liquidadorFormModal.open}
+                    onClose={() => setLiquidadorFormModal({ open: false, nombreLiquidador: "", emailLiquidador: "", gestion: null })}
+                    title="Registrar Datos del Liquidador"
+                    footer={
+                        <Button onClick={saveLiquidadorForm} disabled={busy}>
+                            {busy ? "Guardando..." : "Guardar y Continuar"}
+                        </Button>
+                    }
+                >
+                    <div className="space-y-4">
+                        <p className="text-xs text-on-surface-variant/80">
+                            Para poder realizar el despacho de antecedentes, primero debes registrar el nombre y correo del liquidador responsable de este caso.
+                        </p>
+                        <Input
+                            label="Nombre del Liquidador"
+                            value={liquidadorFormModal.nombreLiquidador}
+                            onChange={(val) => setLiquidadorFormModal(p => ({ ...p, nombreLiquidador: val }))}
+                            placeholder="Ej: Juan Pérez"
+                        />
+                        <Input
+                            label="Email del Liquidador"
+                            value={liquidadorFormModal.emailLiquidador}
+                            onChange={(val) => setLiquidadorFormModal(p => ({ ...p, emailLiquidador: val }))}
+                            placeholder="Ej: jperez@liquidadora.cl"
+                        />
+                    </div>
+                </Modal>
+            )}
+
+            {rechazoPropuestaModal.open && (
+                <Modal
+                    open={rechazoPropuestaModal.open}
+                    onClose={() => setRechazoPropuestaModal({ open: false, observaciones: "", file: null, gestion: null })}
+                    title="Rechazar Propuesta de Liquidación"
+                    footer={
+                        <Button onClick={registrarRechazoPropuesta} disabled={busy}>
+                            {busy ? "Guardando..." : "Registrar Rechazo"}
+                        </Button>
+                    }
+                >
+                    <div className="space-y-4 text-left">
+                        <p className="text-xs text-on-surface-variant/80">
+                            Ingresa las observaciones sobre el rechazo de la propuesta. Esta acción registrará un evento en la bitácora del siniestro pero mantendrá el hito de la propuesta pendiente para futuras propuestas.
+                        </p>
+                        <Textarea
+                            label="Observaciones del Rechazo"
+                            value={rechazoPropuestaModal.observaciones}
+                            onChange={(val) => setRechazoPropuestaModal(p => ({ ...p, observaciones: val }))}
+                            placeholder="Ej: Se envió correo solicitando una nueva propuesta con mejores condiciones..."
+                            rows={4}
+                        />
+                        <div className="mt-2 text-left">
+                            <label className="block text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">Adjuntar Correo de Respaldo (.eml)</label>
+                            {rechazoPropuestaModal.file ? (
+                                <div className="flex items-center justify-between p-4 rounded-2xl bg-surface-container border border-outline-variant/15 text-xs font-bold">
+                                    <span className="truncate flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-primary text-base">mail</span>
+                                        {rechazoPropuestaModal.file.name}
+                                    </span>
+                                    <button type="button" onClick={() => setRechazoPropuestaModal(p => ({ ...p, file: null }))} className="text-error font-black uppercase text-[10px] hover:underline">
+                                        Remover
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="relative rounded-2xl border-2 border-dashed border-outline-variant/30 p-8 flex flex-col items-center justify-center hover:bg-primary/5 transition-colors cursor-pointer">
+                                    <input type="file" accept=".eml" onChange={e => setRechazoPropuestaModal(p => ({ ...p, file: e.target.files?.[0] || null }))} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                    <span className="material-symbols-outlined text-4xl mb-2 text-primary/40">mail</span>
+                                    <span className="text-xs font-black uppercase tracking-widest text-center">Seleccionar Archivo .eml de Respaldo</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
+            {openRejectionViewer && selectedRejectionDoc && (
+                <Modal
+                    open={openRejectionViewer}
+                    onClose={() => { setOpenRejectionViewer(false); setSelectedRejectionDoc(null); setEmlParsed(null); }}
+                    title={`Visor de Correo: ${selectedRejectionDoc.titulo || "Correo de Rechazo"}`}
+                    footer={
+                        <div className="flex gap-2 w-full justify-end">
+                            <a
+                                href={fileUrl(selectedRejectionDoc.urlArchivo)}
+                                download
+                                className="px-4 py-2 bg-primary text-on-primary rounded-xl text-xs font-black shadow-sm hover:shadow-md transition flex items-center gap-1"
+                            >
+                                <span className="material-symbols-outlined text-sm">download</span>
+                                Descargar EML
+                            </a>
+                            <Button variant="secondary" onClick={() => { setOpenRejectionViewer(false); setSelectedRejectionDoc(null); setEmlParsed(null); }}>
+                                Cerrar
+                            </Button>
+                        </div>
+                    }
+                >
+                    <div className="space-y-4 text-left">
+                        {(!emlParsed || emlParsed.loading) ? (
+                            <div className="py-8 flex flex-col items-center justify-center gap-2">
+                                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                                <span className="text-xs font-medium text-on-surface-variant">Cargando correo...</span>
+                            </div>
+                        ) : emlParsed.error ? (
+                            <div className="p-4 rounded-2xl bg-error/5 border border-error/10 text-error text-xs font-bold flex items-center gap-2">
+                                <span className="material-symbols-outlined">warning</span>
+                                <span>No se pudo procesar la visualización gráfica de este correo.</span>
+                            </div>
+                        ) : (
+                            <div className="border border-outline-variant/10 rounded-2xl overflow-hidden bg-surface-container/30 text-on-surface shadow-sm">
+                                {/* Panel de Cabeceras */}
+                                <div className="bg-surface-container-high px-4 py-3 border-b border-outline-variant/10 space-y-1.5 text-[11px] leading-relaxed">
+                                    {emlParsed.from && (
+                                        <div className="flex gap-2">
+                                            <span className="font-black text-on-surface-variant/60 w-12 shrink-0">De:</span>
+                                            <span className="font-bold text-on-surface">{emlParsed.from}</span>
+                                        </div>
+                                    )}
+                                    {emlParsed.to && (
+                                        <div className="flex gap-2">
+                                            <span className="font-black text-on-surface-variant/60 w-12 shrink-0">Para:</span>
+                                            <span className="font-bold text-on-surface">{emlParsed.to}</span>
+                                        </div>
+                                    )}
+                                    {emlParsed.date && (
+                                        <div className="flex gap-2">
+                                            <span className="font-black text-on-surface-variant/60 w-12 shrink-0">Fecha:</span>
+                                            <span className="font-medium text-on-surface">{formatEmlDate(emlParsed.date)}</span>
+                                        </div>
+                                    )}
+                                    {emlParsed.subject && (
+                                        <div className="flex gap-2 border-t border-outline-variant/5 pt-1.5 mt-1.5">
+                                            <span className="font-black text-on-surface-variant/60 w-12 shrink-0">Asunto:</span>
+                                            <span className="font-black text-on-surface">{emlParsed.subject}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Cuerpo del Correo */}
+                                <div className="p-4 bg-surface-container/20 min-h-[200px] max-h-[450px] overflow-auto">
+                                    {emlParsed.isHtml ? (
+                                        <iframe
+                                            srcDoc={`<!DOCTYPE html><html><head><style>body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 13px; line-height: 1.5; color: #e3e3e3; margin: 0; background-color: transparent; }</style></head><body>${emlParsed.body}</body></html>`}
+                                            className="w-full min-h-[300px] border-0 bg-transparent"
+                                            title="Contenido del Correo"
+                                        />
+                                    ) : (
+                                        <pre className="text-xs font-sans whitespace-pre-wrap break-words text-on-surface leading-relaxed">
+                                            {emlParsed.body}
+                                        </pre>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </Modal>
+            )}
+
             {openEmail && (
-                <Modal 
-                    open={openEmail} 
-                    onClose={() => setOpenEmail(false)} 
-                    title="Enviar por Correo" 
+                <Modal
+                    open={openEmail}
+                    onClose={() => setOpenEmail(false)}
+                    title="Enviar por Correo"
                     footer={
                         <Button onClick={sendEmailManual} disabled={busy}>
                             {busy ? "Enviando..." : "Enviar Correo"}
@@ -2935,17 +3566,17 @@ export default function SiniestroDetailPage() {
                         <Input label="CC (separados por coma)" value={emailForm.cc} onChange={v => setEmailForm(p => ({ ...p, cc: v }))} />
                         <Input label="Asunto" value={emailForm.asunto} onChange={v => setEmailForm(p => ({ ...p, asunto: v }))} />
                         <Textarea label="Mensaje" value={emailForm.mensaje} onChange={v => setEmailForm(p => ({ ...p, mensaje: v }))} rows={4} />
-                        
+
                         <div className="mt-4 border-t border-outline-variant/20 pt-4">
                             <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant mb-3 block">Archivos del Expediente (Pre-adjuntar)</span>
-                            
-                            {selected.documentos && selected.documentos.length > 0 ? (
+
+                            {((selected.documentos && selected.documentos.length > 0) || (selected.fotos && selected.fotos.length > 0)) ? (
                                 <div className="max-h-48 overflow-y-auto space-y-2 mb-4 pr-1 custom-scrollbar">
-                                    {selected.documentos.map((doc) => {
+                                    {selected.documentos?.map((doc) => {
                                         const isSelected = emailForm.adjuntosPath?.includes(doc.urlArchivo);
                                         return (
-                                            <div 
-                                                key={doc.id} 
+                                            <div
+                                                key={doc.id}
                                                 onClick={() => {
                                                     setEmailForm(p => {
                                                         const current = p.adjuntosPath || [];
@@ -2957,8 +3588,8 @@ export default function SiniestroDetailPage() {
                                                 }}
                                                 className={cls(
                                                     "flex items-center justify-between p-3 rounded-xl border transition cursor-pointer text-left",
-                                                    isSelected 
-                                                        ? "bg-primary/5 border-primary text-primary" 
+                                                    isSelected
+                                                        ? "bg-primary/5 border-primary text-primary"
                                                         : "bg-surface-container-low border-outline-variant/10 hover:bg-surface-container-high text-on-surface"
                                                 )}
                                             >
@@ -2979,9 +3610,52 @@ export default function SiniestroDetailPage() {
                                             </div>
                                         );
                                     })}
+                                    {selected.fotos?.map((f) => {
+                                        const isSelected = emailForm.adjuntosPath?.includes(f.urlArchivo);
+                                        return (
+                                            <div
+                                                key={f.id}
+                                                onClick={() => {
+                                                    setEmailForm(p => {
+                                                        const current = p.adjuntosPath || [];
+                                                        const next = current.includes(f.urlArchivo)
+                                                            ? current.filter(x => x !== f.urlArchivo)
+                                                            : [...current, f.urlArchivo];
+                                                        return { ...p, adjuntosPath: next };
+                                                    });
+                                                }}
+                                                className={cls(
+                                                    "flex items-center justify-between p-3 rounded-xl border transition cursor-pointer text-left",
+                                                    isSelected
+                                                        ? "bg-primary/5 border-primary text-primary"
+                                                        : "bg-surface-container-low border-outline-variant/10 hover:bg-surface-container-high text-on-surface"
+                                                )}
+                                            >
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <span className="material-symbols-outlined text-lg shrink-0">
+                                                        {isSelected ? "check_box" : "check_box_outline_blank"}
+                                                    </span>
+                                                    <div className="min-w-0 flex items-center gap-2">
+                                                        <div className="h-8 w-8 rounded-lg overflow-hidden border border-outline-variant/20 shrink-0">
+                                                            <img src={fileUrl(f.urlArchivo)} className="h-full w-full object-cover" />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="text-[10px] font-black uppercase tracking-wider truncate">
+                                                                IMAGEN
+                                                            </p>
+                                                            <p className="text-[9px] font-bold opacity-60 truncate">
+                                                                {f.etiqueta || f.descripcion || "Imagen del caso"}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <span className="material-symbols-outlined text-base opacity-40 shrink-0">image</span>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             ) : (
-                                <p className="text-[10px] font-bold text-on-surface-variant/40 uppercase tracking-widest mb-3">No hay archivos en el expediente</p>
+                                <p className="text-[10px] font-bold text-on-surface-variant/40 uppercase tracking-widest mb-3">No hay archivos ni imágenes en el expediente</p>
                             )}
 
                             <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant mb-2 block">Archivos adicionales desde tu PC</span>
@@ -3005,7 +3679,7 @@ export default function SiniestroDetailPage() {
                                 <div className="mt-2 space-y-1">
                                     {Array.from(emailForm.files).map((f, i) => (
                                         <div key={i} className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1">
-                                            <span className="material-symbols-outlined text-[12px]">description</span> {f.name} ({(f.size/1024).toFixed(1)} KB)
+                                            <span className="material-symbols-outlined text-[12px]">description</span> {f.name} ({(f.size / 1024).toFixed(1)} KB)
                                         </div>
                                     ))}
                                 </div>
@@ -3070,8 +3744,8 @@ export default function SiniestroDetailPage() {
                                 Nuevo Archivo <span className="text-error">*</span>
                             </span>
                             <label className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-8 transition cursor-pointer ${editDocModal.newFile
-                                    ? "border-amber-500/60 bg-amber-500/5"
-                                    : "border-outline-variant/30 bg-surface-container-lowest hover:border-amber-500/40 hover:bg-amber-500/5"
+                                ? "border-amber-500/60 bg-amber-500/5"
+                                : "border-outline-variant/30 bg-surface-container-lowest hover:border-amber-500/40 hover:bg-amber-500/5"
                                 }`}>
                                 <input
                                     type="file"
@@ -3131,36 +3805,36 @@ export default function SiniestroDetailPage() {
                 desc="Esta acción marcará el caso como desistido y detendrá el flujo."
             >
                 <div className="space-y-6 pt-4">
-                    <Textarea 
-                        label="Observaciones Internas" 
+                    <Textarea
+                        label="Observaciones Internas"
                         placeholder="Explica el motivo del desistimiento..."
                         value={desistirForm.observaciones}
                         onChange={v => setDesistirForm(p => ({ ...p, observaciones: v }))}
                     />
-                    
+
                     <div className="rounded-2xl border border-outline-variant/10 bg-surface-container-low p-4 space-y-4">
                         <div className="flex items-center justify-between">
                             <span className="text-xs font-black uppercase tracking-widest text-on-surface-variant">¿Notificar al Liquidador?</span>
-                            <Switch 
-                                checked={desistirForm.enviarEmail} 
-                                onChange={v => setDesistirForm(p => ({ ...p, enviarEmail: v }))} 
+                            <Switch
+                                checked={desistirForm.enviarEmail}
+                                onChange={v => setDesistirForm(p => ({ ...p, enviarEmail: v }))}
                             />
                         </div>
-                        
+
                         {desistirForm.enviarEmail && (
                             <div className="space-y-3 pt-2">
-                                <Input 
-                                    label="Email Liquidador" 
+                                <Input
+                                    label="Email Liquidador"
                                     value={desistirForm.emailLiquidador}
                                     onChange={v => setDesistirForm(p => ({ ...p, emailLiquidador: v }))}
                                 />
-                                <Input 
-                                    label="Asunto" 
+                                <Input
+                                    label="Asunto"
                                     value={desistirForm.asunto}
                                     onChange={v => setDesistirForm(p => ({ ...p, asunto: v }))}
                                 />
-                                <Textarea 
-                                    label="Mensaje" 
+                                <Textarea
+                                    label="Mensaje"
                                     value={desistirForm.mensaje}
                                     onChange={v => setDesistirForm(p => ({ ...p, mensaje: v }))}
                                     rows={5}
@@ -3173,8 +3847,8 @@ export default function SiniestroDetailPage() {
                         <Button variant="secondary" onClick={() => setOpenDesistir(false)} disabled={busy}>
                             Cancelar
                         </Button>
-                        <Button 
-                            onClick={desistir} 
+                        <Button
+                            onClick={desistir}
                             disabled={busy || !desistirForm.observaciones}
                             className="bg-error text-on-error hover:bg-error/90 px-8"
                         >

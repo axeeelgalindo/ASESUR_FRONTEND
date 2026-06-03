@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiGet, apiPatch, fileUrl } from "@/lib/api";
+import { apiGet, apiPost, apiPatch, fileUrl } from "@/lib/api";
 import { useSession } from "next-auth/react";
 
 import { Pill } from "@/components/ui/Pill";
@@ -12,6 +12,7 @@ import { Section } from "@/components/ui/Section";
 import { Pagination } from "@/components/ui/Pagination";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 
 function cls(...s) {
   return s.filter(Boolean).join(" ");
@@ -55,6 +56,18 @@ export default function CaptacionesPage() {
   const [filterRamo, setFilterRamo] = useState("");
   const [filterFecha, setFilterFecha] = useState(""); // "" or "hoy" or "semana"
   const [filterOrigen, setFilterOrigen] = useState("");
+  const [filterOrden, setFilterOrden] = useState("desc");
+
+  const [openReject, setOpenReject] = useState(false);
+  const [rejectMotivo, setRejectMotivo] = useState("");
+  const [successToast, setSuccessToast] = useState(null);
+
+  useEffect(() => {
+    if (successToast) {
+      const timer = setTimeout(() => setSuccessToast(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [successToast]);
 
 
   const [openDetail, setOpenDetail] = useState(false);
@@ -128,6 +141,7 @@ export default function CaptacionesPage() {
       if (filterRamo) p.append("ramo", filterRamo);
       if (filterFecha) p.append("fecha", filterFecha);
       if (filterOrigen) p.append("origen", filterOrigen);
+      if (filterOrden) p.append("orden", filterOrden);
 
       const res = await apiGet(`/captaciones?${p.toString()}`);
       if (res && res.data) {
@@ -141,7 +155,7 @@ export default function CaptacionesPage() {
     } finally {
       setLoading(false);
     }
-  }, [pagina, limite, filterEstado, filterRamo, filterFecha, filterOrigen]);
+  }, [pagina, limite, filterEstado, filterRamo, filterFecha, filterOrigen, filterOrden]);
 
   // Debounced Search Effect
   useEffect(() => {
@@ -153,7 +167,7 @@ export default function CaptacionesPage() {
 
   useEffect(() => {
     setPagina(1); // Reset page on filter change
-  }, [filterEstado, filterRamo, filterFecha, filterOrigen]);
+  }, [filterEstado, filterRamo, filterFecha, filterOrigen, filterOrden]);
 
   // Sync from URL
   useEffect(() => {
@@ -199,8 +213,12 @@ export default function CaptacionesPage() {
     setBusy(true);
     try {
       await apiPatch(`/captaciones/${selected.id}/asignar-asesor`, { asesorId: asesorPick });
-      const full = await apiGet(`/captaciones/${selected.id}`);
-      setSelected(full);
+      setOpenDetail(false);
+      setSelected(null);
+      setSuccessToast({
+        message: "¡Caso pasado a Pre-Siniestro exitosamente!",
+        detail: "Se ha asignado el asesor y el caso ha sido escalado para revisión de Pre-Siniestro."
+      });
       refresh();
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || "Error asignando asesor");
@@ -209,91 +227,168 @@ export default function CaptacionesPage() {
     }
   };
 
+  const rechazar = async () => {
+    if (!selected?.id) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const motivo = rejectMotivo.trim();
+      if (!motivo) throw new Error("Escribe un motivo");
+      await apiPost(`/pre-siniestro/${selected.id}/rechazar`, { motivo });
+      setOpenReject(false);
+      setRejectMotivo("");
+      setOpenDetail(false);
+      setSelected(null);
+      setSuccessToast({
+        message: "¡Captación rechazada exitosamente!",
+        detail: "El caso ha quedado en estado RECHAZADO y se ha notificado al asesor."
+      });
+      await refresh();
+    } catch (e) {
+      setError(e?.response?.data?.error || e?.message || "Error rechazando captación");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <main className="max-w-[1600px] mx-auto px-6 py-10 lg:px-12">
-      {/* Header Section */}
-      <header className="mb-10 flex flex-col lg:items-center  md:flex-row md:items-end justify-between gap-6">
-        <div>
-          <p className="text-on-surface-variant font-medium">
-            Gestión integral de cartera y nuevas captaciones en terreno.
-          </p>
-        </div>
-      </header>
-
-      {/* Filter Bar */}
-      <section className="mb-8">
-        <div className="bg-surface-container rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3 flex-1">
-            {/* Search */}
-            <div className="relative flex-1 min-w-[240px]">
-              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant font-light">search</span>
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="w-full bg-surface-container-low border border-outline-variant/10 focus:ring-1 focus:ring-primary rounded-xl pl-12 pr-4 py-3 text-on-surface placeholder:text-on-surface-variant/50 transition-all outline-none"
-                placeholder="Buscar por Folio, Cliente, RUT o Dirección..."
-                type="text"
-              />
-            </div>
-
-            {/* Select Filters */}
-            <select
-              value={filterEstado}
-              onChange={(e) => setFilterEstado(e.target.value)}
-              className="bg-surface-container-high text-on-surface text-sm font-semibold px-4 py-2.5 rounded-xl border-none outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-            >
-              {EstadoOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-            </select>
-
-            <select
-              value={filterRamo}
-              onChange={(e) => setFilterRamo(e.target.value)}
-              className="bg-surface-container-high text-on-surface text-sm font-semibold px-4 py-2.5 rounded-xl border-none outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-            >
-              {RamoOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-            </select>
-
-            <select
-              value={filterFecha}
-              onChange={(e) => setFilterFecha(e.target.value)}
-              className="bg-surface-container-high text-on-surface text-sm font-semibold px-4 py-2.5 rounded-xl border-none outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-            >
-              <option value="">Cualquier Fecha</option>
-              <option value="hoy">Hoy</option>
-              <option value="semana">Últimos 7 días</option>
-            </select>
-
-            <select
-              value={filterOrigen}
-              onChange={(e) => setFilterOrigen(e.target.value)}
-              className="bg-surface-container-high text-on-surface text-sm font-semibold px-4 py-2.5 rounded-xl border-none outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-            >
-              <option value="">Todos los Orígenes</option>
-              <option value="ASESUR">Asesur</option>
-              <option value="PROPIO">Propio</option>
-            </select>
+      {/* Header Area */}
+      <div className="mb-8 flex flex-col gap-6 md:flex-row md:items-center md:justify-between font-sans">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-inner shadow-primary/20 shrink-0">
+            <span className="material-symbols-outlined text-3xl font-light">campaign</span>
           </div>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-on-surface">Captaciones</h1>
+            <p className="text-sm font-medium text-on-surface-variant/70 mt-0.5">
+              Gestión integral de cartera y nuevas captaciones en terreno.
+            </p>
+          </div>
+        </div>
 
-          {/* Toggle View */}
-          <div className="flex items-center bg-surface-container-lowest p-1 rounded-xl border border-outline-variant/5">
-            <button
-              onClick={() => setViewMode("list")}
-              className={cls(
-                "p-2 rounded-lg transition-all",
-                viewMode === "list" ? "bg-surface-container-highest text-secondary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
-              )}
-            >
-              <span className="material-symbols-outlined">view_list</span>
-            </button>
-            <button
-              onClick={() => setViewMode("grid")}
-              className={cls(
-                "p-2 rounded-lg transition-all",
-                viewMode === "grid" ? "bg-surface-container-highest text-secondary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
-              )}
-            >
-              <span className="material-symbols-outlined">grid_view</span>
-            </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="secondary" onClick={() => refresh(query)} disabled={loading || busy} className="px-5 border-outline-variant/30 font-bold h-11 rounded-xl">
+            <span className={cls("material-symbols-outlined text-xl transition-transform duration-700", loading && "animate-spin")}>
+              sync
+            </span>
+            Actualizar
+          </Button>
+        </div>
+      </div>
+
+      {/* Success Notification */}
+      {successToast && (
+        <div className="mb-6 flex flex-col gap-2 rounded-2xl border border-green-500/20 bg-green-500/10 p-4 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3 text-green-700 dark:text-green-400 font-bold text-sm">
+            <span className="material-symbols-outlined text-green-600 text-lg">check_circle</span>
+            <span>{successToast.message}</span>
+          </div>
+          {successToast.detail && (
+            <p className="text-xs text-on-surface-variant leading-relaxed">
+              {successToast.detail}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Filters Bar */}
+      <section className="mb-8">
+        <div className="bg-surface-container-low rounded-[2rem] border border-outline-variant/10 p-6 md:p-8 shadow-sm backdrop-blur-xl">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 items-end font-sans">
+            {/* Row 1, Col 1-2: Search */}
+            <div className="sm:col-span-2 relative">
+              <span className="text-[11px] font-bold text-on-surface-variant/70 tracking-wider mb-1.5 block">Búsqueda Inteligente</span>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant/60 font-light">search</span>
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="w-full bg-surface-container focus:bg-surface-container-high border border-outline-variant/10 focus:border-primary/40 focus:ring-4 focus:ring-primary/5 rounded-2xl pl-12 pr-4 h-12 text-on-surface placeholder:text-on-surface-variant/40 transition-all outline-none text-sm font-medium"
+                  placeholder="Buscar por folio, cliente, RUT, dirección..."
+                  type="text"
+                />
+              </div>
+            </div>
+            
+            {/* Row 1, Col 3: Estado */}
+            {/* Row 1, Col 3: Estado */}
+            <Select
+              label="Estado"
+              value={filterEstado}
+              onChange={setFilterEstado}
+              options={EstadoOptions}
+            />
+
+            {/* Row 1, Col 4: Tipo de Caso */}
+            <Select
+              label="Tipo de Caso"
+              value={filterRamo}
+              onChange={setFilterRamo}
+              options={RamoOptions}
+            />
+
+            {/* Row 2, Col 1: Fecha */}
+            <Select
+              label="Fecha de Creación"
+              value={filterFecha}
+              onChange={setFilterFecha}
+              options={[
+                { value: "", label: "Cualquier Fecha" },
+                { value: "hoy", label: "Hoy" },
+                { value: "semana", label: "Últimos 7 días" },
+              ]}
+            />
+
+            {/* Row 2, Col 2: Origen */}
+            <Select
+              label="Origen"
+              value={filterOrigen}
+              onChange={setFilterOrigen}
+              options={[
+                { value: "", label: "Todos los Orígenes" },
+                { value: "ASESUR", label: "Asesur" },
+                { value: "PROPIO", label: "Propio" },
+              ]}
+            />
+
+            {/* Row 2, Col 3: Orden */}
+            <Select
+              label="Orden"
+              value={filterOrden}
+              onChange={setFilterOrden}
+              options={[
+                { value: "desc", label: "Más Recientes" },
+                { value: "asc", label: "Más Antiguos" },
+              ]}
+            />
+
+            {/* Row 2, Col 4: Vista */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold text-on-surface-variant/70 tracking-wider">Vista</span>
+              <div className="flex h-12 items-center gap-1 rounded-2xl bg-surface-container p-1 border border-outline-variant/10 w-full justify-around">
+                <button
+                  onClick={() => setViewMode("grid")}
+                  className={cls(
+                    "flex h-10 flex-1 items-center justify-center rounded-xl transition-all cursor-pointer",
+                    viewMode === "grid" ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
+                  )}
+                >
+                  <span className="material-symbols-outlined text-xl">grid_view</span>
+                  <span className="text-xs font-bold ml-1.5 hidden sm:inline">Tarjetas</span>
+                </button>
+                <button
+                  onClick={() => setViewMode("list")}
+                  className={cls(
+                    "flex h-10 flex-1 items-center justify-center rounded-xl transition-all cursor-pointer",
+                    viewMode === "list" ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
+                  )}
+                >
+                  <span className="material-symbols-outlined text-xl">view_list</span>
+                  <span className="text-xs font-bold ml-1.5 hidden sm:inline">Lista</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -505,7 +600,7 @@ export default function CaptacionesPage() {
                        <p className="font-medium">La captación aún no está lista para VB. El captador debe finalizarla.</p>
                     </div>
                   ) : (
-                    <>
+                    <div className="flex flex-col gap-4">
                       <p className="text-[11px] text-on-surface-variant/70 font-medium">
                         Al asignar un asesor, se otorgará automáticamente el Visto Bueno (VB) y el caso se escalará a la etapa de <span className="font-bold text-secondary">PRE-SINIESTRO</span>.
                       </p>
@@ -523,13 +618,27 @@ export default function CaptacionesPage() {
                         <button
                           onClick={saveAsignacion}
                           disabled={busy || !asesorPick}
-                          className="bg-secondary text-on-secondary font-bold px-6 py-3 rounded-xl disabled:opacity-50 transition-all active:scale-95 flex items-center gap-2"
+                          className="bg-secondary hover:bg-secondary/90 text-on-secondary font-bold px-6 py-3 rounded-xl disabled:opacity-50 transition-all active:scale-95 flex items-center gap-2 cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-lg">fact_check</span>
                           Dar VB y Escalar
                         </button>
                       </div>
-                    </>
+                      
+                      <div className="flex justify-end pt-2 border-t border-outline-variant/10">
+                        <button
+                          onClick={() => {
+                            setOpenReject(true);
+                            setRejectMotivo("");
+                          }}
+                          disabled={busy}
+                          className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-error text-error hover:bg-error/10 font-bold transition-all active:scale-95 cursor-pointer text-xs"
+                        >
+                          <span className="material-symbols-outlined text-sm">cancel</span>
+                          Rechazar Captación
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </section>
               )}
@@ -690,6 +799,35 @@ export default function CaptacionesPage() {
             step="0.01"
             value={editForm.m2ViviendaTotal}
             onChange={(v) => setEditForm((p) => ({ ...p, m2ViviendaTotal: v }))}
+          />
+        </div>
+      </Modal>
+
+      {/* Modal Rechazar Captación */}
+      <Modal
+        open={openReject}
+        title="Rechazar Captación"
+        onClose={() => setOpenReject(false)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setOpenReject(false)} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button variant="danger" onClick={rechazar} disabled={busy}>
+              Confirmar Rechazo
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-4">
+          <p className="text-sm font-medium text-on-surface-variant">
+            Por favor, indica el motivo del rechazo para que el captador pueda realizar las correcciones necesarias.
+          </p>
+          <textarea
+            value={rejectMotivo}
+            onChange={(e) => setRejectMotivo(e.target.value)}
+            className="min-h-[140px] w-full rounded-2xl border border-outline-variant/20 bg-surface-container-low p-4 text-sm font-medium text-on-surface placeholder:text-on-surface-variant/40 outline-none transition focus:border-primary/50 focus:ring-4 focus:ring-primary/5"
+            placeholder="Ej: Falta mandato notarial, fotos borrosas, o información de contacto incompleta..."
           />
         </div>
       </Modal>
