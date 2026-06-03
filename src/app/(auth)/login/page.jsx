@@ -5,8 +5,8 @@ import { signIn } from "next-auth/react";
 import { formatRut, validateRut } from "@/lib/rut";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("cribortech@asesur.com");
-  const [password, setPassword] = useState("cribortech2026");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [rutBusquilla, setRutBusquilla] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -70,7 +70,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-surface-container border-none focus:ring-1 focus:ring-primary rounded-lg py-4 pl-12 pr-4 text-on-surface placeholder:text-outline/50 transition-all outline-none"
-                  placeholder="agente@asesur.com"
+                  placeholder="usuario@asesur.cl"
                 />
               </div>
             </div>
