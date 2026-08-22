@@ -89,9 +89,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }) {
         )}
 
         {/* Captaciones: todos */}
-        {userRole !== "ASESOR" && (
-          <NavItem href="/captaciones" icon="payments" label="Captaciones" isCollapsed={isCollapsed} />
-        )}
+        <NavItem href="/captaciones" icon="payments" label="Captaciones" isCollapsed={isCollapsed} />
 
         {/* Pre-Siniestros: no CAPTADOR */}
         {userRole !== "CAPTADOR" && (

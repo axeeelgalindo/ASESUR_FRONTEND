@@ -584,7 +584,7 @@ export default function CaptacionesPage() {
                   </div>
                   <div className="space-y-1">
                     <p className="text-on-surface-variant font-bold uppercase tracking-tighter opacity-60">Captador</p>
-                    <p className="text-on-surface font-medium">{selected.captadoPor?.nombre || selected.captadoPor?.email || "—"}</p>
+                    <p className="text-on-surface font-medium">{selected.captadoPor?.nombre || selected.creadoPor?.nombre || selected.captadoPor?.email || "—"}</p>
                   </div>
                 </div>
               </section>
