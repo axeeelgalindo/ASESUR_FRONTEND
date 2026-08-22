@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import api, { apiGet, apiPost, apiPostForm, apiPatch, apiPutForm, fileUrl } from "@/lib/api";
 import { validateRut, formatRut } from "@/lib/rut";
 import comunasData from "@/lib/comunas.json";
+import { BANCOS_CHILE } from "@/lib/bancos";
 
 /**
  * Labels UI
@@ -976,7 +977,7 @@ export default function PreSiniestroPage() {
             <span className="material-symbols-outlined text-xl">download</span>
             Exportar Excel
           </Button>
-          {isOps && (
+          {(isOps || isAsesor) && (
             <button
               onClick={handleOpenCreate}
               disabled={busy}
@@ -1432,12 +1433,24 @@ export default function PreSiniestroPage() {
                   onChange={(v) => setNewCaso((p) => ({ ...p, tipo: v }))}
                 />
               </div>
-              <Input
-                label="Banco Acreedor"
-                value={newCaso.banco}
-                onChange={(v) => setNewCaso((p) => ({ ...p, banco: v }))}
-                placeholder="Ej: Banco Estado, Santander..."
-              />
+              <div className="flex flex-col gap-2">
+                <Select
+                  label="Banco Acreedor"
+                  options={[{ value: "", label: "Seleccionar Banco..." }, ...BANCOS_CHILE]}
+                  value={BANCOS_CHILE.some(b => b.value === newCaso.banco) ? newCaso.banco : (newCaso.banco ? "Otro" : "")}
+                  onChange={(v) => {
+                    if (v === "Otro") setNewCaso(p => ({ ...p, banco: " " }));
+                    else setNewCaso(p => ({ ...p, banco: v }));
+                  }}
+                />
+                {newCaso.banco !== undefined && newCaso.banco !== "" && !BANCOS_CHILE.filter(b => b.value !== "Otro").some(b => b.value === newCaso.banco) && (
+                  <Input
+                    placeholder="Escribe el nombre del banco o institución"
+                    value={newCaso.banco.trim() === "" ? "" : newCaso.banco}
+                    onChange={(v) => setNewCaso(p => ({ ...p, banco: v }))}
+                  />
+                )}
+              </div>
               <Input
                 label="Fecha de Ocurrencia"
                 type="date"
@@ -2157,8 +2170,12 @@ export default function PreSiniestroPage() {
                         <span className="material-symbols-outlined text-xl">camera</span>
                       </div>
                       <div>
-                        <div className="text-sm font-black">{selected.captadoPor?.nombre || "—"}</div>
-                        <div className="text-[11px] font-medium text-on-surface-variant/60">{selected.captadoPor?.email || "—"}</div>
+                        <div className="text-sm font-black">
+                          {selected.captadoPor?.nombre || (selected.creadoPor?.nombre || (selected.asesor?.nombre ? `${selected.asesor.nombre}` : "—"))}
+                        </div>
+                        <div className="text-[11px] font-medium text-on-surface-variant/60">
+                          {selected.captadoPor?.email || selected.creadoPor?.email || selected.asesor?.email || "—"}
+                        </div>
                       </div>
                     </div>
                   </div>
