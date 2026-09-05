@@ -13,7 +13,7 @@ export const authOptions = {
       name: "Credentials",
       async authorize(credentials) {
         try {
-          const email = credentials?.email?.trim();
+          const email = credentials?.email ? String(credentials.email).trim().toLowerCase() : "";
           const password = credentials?.password;
           if (!email || !password) return null;
 
