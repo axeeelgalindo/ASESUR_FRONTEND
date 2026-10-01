@@ -1,0 +1,115 @@
+{
+  "intro": "Esta política explica cómo Asesur APP, la plataforma web de ASESUR y su API recopilan, utilizan, almacenan y comparten datos para gestionar siniestros de seguros. Comprende tanto la información de clientes y expedientes como la de usuarios internos y visitantes de la web. Describe también las limitaciones actuales de acceso, seguridad y conservación para que las personas conozcan cómo se trata su información.",
+  "sections": [
+    {
+      "title": "Responsable y alcance",
+      "paragraphs": [
+        "• Responsable: Sociedad Asesur Limitada.",
+        "• RUT: 77976274-2.",
+        "• Domicilio: Pasaje Cordillera 1350, Osorno, Chile.",
+        "• Contacto para privacidad y ejercicio de derechos: gbarria@asesoriasasesur.com.",
+        "Esta política comprende Asesur APP (com.asesur.app), la plataforma web de ASESUR y los servicios que reciben, almacenan y procesan sus datos. Se refiere a la gestión de casos y operaciones en Chile. Las aseguradoras, liquidadores, bancos, abogados y proveedores pueden tener responsabilidades propias respecto de los tratamientos que realizan."
+      ]
+    },
+    {
+      "title": "Personas cuyos datos tratamos",
+      "paragraphs": [
+        "Tratamos datos de propietarios, arrendatarios, asegurados y otras personas cuyos antecedentes se incorporan a un expediente, incluidas aquellas que aparecen en fotografías y documentos. También tratamos datos de usuarios del sistema, asesores, inspectores, liquidadores, abogados y otros contactos que intervienen en la gestión.",
+        "Cuentas del personal. ASESUR crea y administra las cuentas de trabajo del personal autorizado. La app móvil permite iniciar sesión con las credenciales asignadas por la empresa; no ofrece registro de cuentas por parte del usuario ni lo dirige a un registro externo.",
+        "Expedientes de clientes. Los clientes y asegurados no tienen una cuenta de usuario en Asesur APP. El personal incorpora sus antecedentes para asesorarlos y gestionar sus siniestros. Crear un expediente de cliente no crea una cuenta de acceso. La plataforma web dispone además de una consulta de casos por RUT sin inicio de sesión, cuyas características se explican en el apartado de acceso a la información.",
+        "Los datos proceden de los titulares, del personal que registra o actualiza los expedientes, de los documentos aportados y de las comunicaciones con quienes intervienen en el caso. El acceso al dispositivo mediante un permiso de cámara, galería o ubicación no sustituye la autorización que corresponda para tratar los datos de otras personas."
+      ]
+    },
+    {
+      "title": "Información que recopilamos y para qué la usamos",
+      "paragraphs": [
+        "Identificación y contacto. Podemos registrar nombre, RUT, fecha de nacimiento, correo electrónico, teléfonos y número de documento de la cédula de identidad cuando se incorpora al formulario. Estos antecedentes se utilizan para identificar al cliente, asociarlo al expediente y coordinar la gestión. El número de documento es un campo opcional, distinto del RUT; no se presenta como requisito general de una aseguradora o autoridad.",
+        "Inmueble y siniestro. Registramos dirección, comuna, región y, cuando se aportan, ciudad, departamento, superficie, antigüedad, fecha y tipo de siniestro, daños por recinto, mediciones, observaciones, fotografías, presupuestos y antecedentes de inspección. Se emplean para documentar el caso, preparar informes y efectuar su seguimiento.",
+        "Seguro y participantes. El expediente puede contener compañía aseguradora, banco o acreedor hipotecario, número de siniestro, datos de liquidadores, analistas y abogados, asignaciones de personal, gestiones, comunicaciones, fechas y estados de tramitación.",
+        "Antecedentes económicos. La plataforma central puede registrar cuenta corriente cuando se incorpora al expediente, montos de presupuestos, propuestas e indemnizaciones, honorarios, porcentajes de cobro, pagos, fechas, estados de facturación, referencias de boletas y comprobantes. Se utilizan para administrar los aspectos económicos del caso. Registrar estos datos no supone acceder a la banca electrónica ni ejecutar transferencias bancarias desde la app.",
+        "Fotografías y documentos. Tratamos las imágenes tomadas o seleccionadas por el usuario y los documentos incorporados al expediente, como informes, antecedentes legales, PDFs, planillas y comprobantes. Pueden contener firmas, domicilios y datos de terceros. También se registran nombres o títulos de archivos, tipos, tamaños, fechas y referencias al caso y a quien los incorpora. El sistema permite consultar, descargar y generar documentos Word, PDF y planillas con estos antecedentes.",
+        "Cuentas y actividad. Tratamos nombre, correo, contraseña para autenticación, identificador de cuenta, rol, estado de acceso, sesiones, asignaciones y registros de determinadas acciones. Los registros pueden incluir quién realizó una acción, cuándo, sobre qué expediente y detalles de la operación. También se guardan notificaciones, destinatarios, estado de lectura y datos sobre el envío de correos.",
+        "Datos técnicos. Al conectarse a los servicios se procesa información necesaria para la comunicación, como dirección IP, ruta solicitada, fecha, resultado de la petición y errores. Algunas rutas contienen identificadores de casos o el RUT de una consulta. Esta información puede aparecer en registros del servicio y, en el caso de las direcciones web visitadas, en el historial del navegador."
+      ]
+    },
+    {
+      "title": "Cámara, galería y ubicación del dispositivo",
+      "paragraphs": [
+        "Cámara y galería. La app solicita los permisos correspondientes para tomar fotografías o seleccionar imágenes. Las imágenes elegidas se redimensionan y comprimen antes de enviarse al servidor para incorporarlas al expediente. La app no carga toda la galería como parte de este flujo: envía las imágenes tomadas o seleccionadas por el usuario.",
+        "Ubicación. Cuando el usuario activa la función de ubicación y concede el permiso en primer plano, la app obtiene coordenadas y solicita una dirección mediante geocodificación inversa del sistema operativo. Según el dispositivo, pueden intervenir los servicios del proveedor del sistema. El formulario de creación revisado envía al servidor la dirección completada y confirmada, no las coordenadas obtenidas por esa función. No se implementa seguimiento continuo ni se solicita ubicación en segundo plano en este flujo.",
+        "Los permisos pueden administrarse desde los ajustes del dispositivo. Denegarlos limita las funciones que dependen de ellos; la dirección también puede completarse manualmente. Revocar un permiso no elimina los antecedentes ya enviados al servidor."
+      ]
+    },
+    {
+      "title": "Sesión y almacenamiento en el dispositivo y el navegador",
+      "paragraphs": [
+        "La app móvil conserva su token de sesión en almacenamiento local mediante AsyncStorage, que no proporciona cifrado propio. La versión actual no utiliza SecureStore para guardar ese token. Cerrar sesión elimina el token local, pero no borra los expedientes del servidor ni limpia expresamente las fotografías temporales o la cola de cargas pendientes.",
+        "Si falla una carga de fotografía, la app puede guardar una entrada pendiente con el identificador del caso, sector del inmueble, título, fecha, ruta local de la imagen y número de reintentos. La cola se guarda en AsyncStorage, sin cifrado propio y sin incluir el contenido de la imagen ni su representación Base64. Se procesa al iniciar o reactivar la app y en determinados flujos de carga, siempre que exista un token. No hay una garantía de reintento inmediato al recuperar la conexión.",
+        "La entrada se elimina de la cola cuando el servidor confirma la carga o después de tres reintentos fallidos. Su eliminación tras fallos no significa que la fotografía se haya recibido. La cola actual no se separa por usuario y cerrar sesión no la vacía, por lo que una carga pendiente puede procesarse con la sesión que esté activa posteriormente en ese dispositivo.",
+        "Las fotografías tomadas y las copias procesadas se guardan temporalmente en la caché de la aplicación. No se guardan automáticamente en la galería pública. Una imagen seleccionada desde la galería ya estaba allí antes de la selección. El flujo de carga no elimina expresamente todos los archivos temporales al terminar; pueden permanecer hasta que se limpie la caché o se borren los datos de la aplicación. Las copias descargadas o compartidas fuera de la app quedan sujetas al almacenamiento y gestión de su destinatario.",
+        "La plataforma web utiliza cookies de autenticación y sesión para mantener el acceso del usuario, y almacenamiento local para recordar la preferencia de tema visual. Bloquear o borrar las cookies puede impedir el acceso a las funciones privadas. La política de privacidad se puede leer sin iniciar sesión."
+      ]
+    },
+    {
+      "title": "Finalidades de la gestión",
+      "paragraphs": [
+        "Utilizamos los antecedentes para recibir y organizar casos, documentar daños, preparar fichas, informes y presupuestos, coordinar visitas y comunicaciones, gestionar la liquidación y hacer seguimiento de indemnizaciones, pagos y facturación. La elaboración de un informe no garantiza una indemnización.",
+        "También utilizamos datos para autenticar usuarios, asignar tareas, registrar actividad, emitir notificaciones, resolver errores y elaborar indicadores de gestión y estadísticas del historial de casos. El sistema conserva expedientes identificables; generar estadísticas no los anonimiza automáticamente.",
+        "La plataforma no incorpora funciones de venta de datos, anuncios personalizados ni telemarketing. La información se utiliza para la gestión descrita en esta política. Los tratamientos que requieran autorización del titular deben contar con ella; esta política informa sobre los tratamientos y no constituye por sí sola una autorización."
+      ]
+    },
+    {
+      "title": "Destinatarios y proveedores",
+      "paragraphs": [
+        "Personal de ASESUR. Las funciones internas utilizan cuentas, roles y asignaciones para organizar el acceso y la intervención del personal. Existen también modalidades de consulta y descarga sin sesión, detalladas en el siguiente apartado.",
+        "Participantes del caso. Según la gestión realizada, pueden comunicarse antecedentes a aseguradoras, liquidadores, bancos o acreedores hipotecarios, abogados y otros destinatarios seleccionados para una comunicación. Los formularios de correo permiten indicar destinatarios y copias, y adjuntar documentos. El contenido compartido depende del mensaje y de los archivos incluidos por quien lo envía.",
+        "Correo electrónico. El sistema utiliza Resend para enviar notificaciones y comunicaciones. Para prestar el servicio, Resend recibe direcciones de remitente y destinatarios, asunto, cuerpo del mensaje, dirección de respuesta y los adjuntos incluidos. ASESUR registra información de envío, como el identificador del mensaje, fecha y posibles errores. Los proveedores de correo de los destinatarios también intervienen en la entrega y conservación de los mensajes.",
+        "Ubicación. Los servicios nativos de ubicación y geocodificación del dispositivo pueden procesar las coordenadas necesarias para devolver la dirección solicitada por el usuario.",
+        "Tipografías de la web. Las páginas del frontend, incluida esta política, solicitan fuentes e iconos a Google Fonts. Al realizar esas solicitudes, el navegador comunica a Google la dirección IP y datos técnicos de la petición necesarios para servir los recursos. Esta carga de fuentes no envía por sí misma el contenido de los expedientes.",
+        "Alojamiento y comunicaciones. La infraestructura que sirve la plataforma y sus proveedores de conectividad procesan las conexiones y los datos alojados para prestar el servicio. El código no determina por sí solo la ubicación física de los servidores, respaldos o proveedores. El uso de correo y servicios del dispositivo o del navegador puede implicar tratamiento fuera de Chile; no se afirma que todos los datos permanezcan exclusivamente en el país."
+      ]
+    },
+    {
+      "title": "Acceso a consultas y archivos",
+      "paragraphs": [
+        "La consulta web por RUT funciona sin inicio de sesión y puede devolver nombre y RUT del cliente, folio, número de siniestro, compañía, dirección, comuna, tipo, etapa, estado, fechas y nombre del asesor. No verifica que quien realiza la consulta sea el titular del RUT. Por ello, esos antecedentes no están limitados exclusivamente al personal con cuenta.",
+        "Los archivos cargados se sirven mediante enlaces directos que, en la implementación actual, no exigen autenticación. Una persona que obtenga un enlace puede acceder al archivo correspondiente. No debe interpretarse que los permisos de las pantallas privadas protegen también todas las descargas.",
+        "Las comunicaciones por correo y las descargas generan copias fuera del expediente central. Eliminar un registro en la plataforma no retira automáticamente las copias recibidas por terceros ni las guardadas en otros dispositivos."
+      ]
+    },
+    {
+      "title": "Seguridad",
+      "paragraphs": [
+        "El sitio de producción dispone de HTTPS con certificado SSL, según la configuración confirmada por ASESUR. HTTPS protege la comunicación con ese sitio; las conexiones de la app móvil dependen de la dirección del servicio configurada en su distribución. No se utiliza cifrado de extremo a extremo de los expedientes: el servidor procesa los datos para permitir su gestión.",
+        "El sistema implementa comprobación de contraseñas mediante hashes bcrypt, tokens de sesión, controles de rol en funciones protegidas y registros de determinadas operaciones. Estos controles tienen las limitaciones de almacenamiento local y acceso público descritas anteriormente.",
+        "Esta política no afirma que exista cifrado en reposo de todas las bases, fotografías o copias de seguridad, auditoría completa de todas las lecturas ni eliminación automática de todos los archivos. El token y la cola móvil no incorporan cifrado propio mediante AsyncStorage. Si detectas un acceso o una divulgación indebida, comunícalo al contacto de privacidad indicado en esta página."
+      ]
+    },
+    {
+      "title": "Conservación y eliminación",
+      "paragraphs": [
+        "El sistema mantiene los expedientes, documentos, fotografías e historiales después de su tramitación. Cambiar un estado, desistir de un caso o dejar de verlo en una pantalla no elimina sus datos. La implementación actual no aplica un plazo máximo general ni una purga automática por antigüedad; no se ofrece un plazo uniforme de borrado.",
+        "Las solicitudes de eliminación requieren una revisión de ASESUR para determinar qué información puede eliminarse y qué información debe conservarse para la gestión pendiente, obligaciones aplicables o controversias. La ausencia de una purga automática no implica que cualquier conservación esté justificada indefinidamente.",
+        "Cuentas del personal. ASESUR administra las altas, desactivaciones y bajas de las cuentas de trabajo. La app móvil no ofrece autoeliminación de cuentas. La plataforma de administración permite eliminar usuarios cuando sus relaciones con otros registros lo permiten. Desactivar una cuenta bloquea el acceso, pero no elimina sus datos. El personal puede dirigir las solicitudes relativas a sus datos a ASESUR mediante el contacto de privacidad.",
+        "Datos de clientes. Las solicitudes de rectificación o eliminación se refieren a los antecedentes de la persona y a su expediente, no a una cuenta móvil. Se revisan individualmente según la información afectada y los motivos que puedan exigir conservarla. Eliminar la cuenta de un trabajador no elimina por sí mismo los expedientes de los clientes que atendió.",
+        "Eliminaciones disponibles. El sistema permite a usuarios con los permisos correspondientes eliminar determinadas fotografías y registros de recintos o pagos. Al eliminar fotografías se intenta borrar también su archivo del servidor. Estas funciones parciales no constituyen un borrado completo del expediente ni una eliminación automática de todos los datos de una persona.",
+        "La eliminación de un registro no garantiza por sí sola el borrado simultáneo de archivos físicos, registros técnicos, respaldos o copias de correo. La configuración revisada no establece un plazo común de eliminación para esos soportes. Las respuestas a solicitudes de eliminación deben indicar su alcance y los datos que deban mantenerse.",
+        "En el dispositivo, la cola, el token y las imágenes temporales siguen los comportamientos descritos en el apartado de almacenamiento. Borrar los datos locales o desinstalar la app no elimina las fotografías, documentos o casos ya recibidos por el servidor."
+      ]
+    },
+    {
+      "title": "Derechos y contacto",
+      "paragraphs": [
+        "Puedes solicitar información sobre el tratamiento de tus datos y ejercer los derechos de acceso, rectificación, eliminación o cancelación y oposición que correspondan según la legislación aplicable. Cuando un tratamiento dependa de tu autorización, puedes solicitar su revocación para actuaciones futuras, sin que ello elimine automáticamente obligaciones de conservación o actuaciones previas legítimas.",
+        "Envía tu solicitud a gbarria@asesoriasasesur.com, indicando tu nombre, si se refiere a tus datos como cliente o como integrante del personal, información suficiente para localizar el expediente o cuenta de trabajo, la solicitud concreta y un medio de respuesta. ASESUR podrá solicitar los antecedentes necesarios para verificar tu identidad y evaluará la solicitud conforme a los requisitos y plazos legales aplicables. No necesitas crear una cuenta ni instalar la app para presentar una solicitud. Este canal permite solicitar una revisión; no ejecuta un borrado automático.",
+        "El acceso al servicio de privacidad no requiere enviar contraseñas ni tokens de sesión. Las solicitudes sobre cuentas de personal y las relativas a datos de clientes se revisan según la información afectada; no se presume que eliminar una cuenta permita borrar antecedentes de otras personas."
+      ]
+    },
+    {
+      "title": "Cambios de esta política",
+      "paragraphs": [
+        "ASESUR publicará las modificaciones en esta página con su fecha de actualización. La política deberá mantenerse acorde con las funciones utilizadas, los proveedores y las prácticas de acceso, seguridad y conservación. Los cambios sustanciales se comunicarán por los medios que correspondan."
+      ]
+    }
+  ]
+}
