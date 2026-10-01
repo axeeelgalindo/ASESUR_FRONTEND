@@ -837,7 +837,16 @@ export default function PreSiniestroPage() {
       window.URL.revokeObjectURL(url);
       setOpenWordModal(false);
     } catch (e) {
-      setError("Fallo al generar Documento Ficha 1");
+      let detalle = e?.response?.data;
+      // Axios recibe también los errores JSON como Blob al descargar un Word.
+      if (detalle instanceof Blob) {
+        try {
+          detalle = JSON.parse(await detalle.text());
+        } catch {
+          detalle = null;
+        }
+      }
+      setError(detalle?.message || "Fallo al generar Documento Ficha 1");
     } finally {
       setBusy(false);
     }
