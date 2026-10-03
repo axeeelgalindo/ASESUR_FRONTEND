@@ -1,4 +1,5 @@
 "use client";
+import { caseRole } from "@/lib/casePermissions";
 
 import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -25,7 +26,8 @@ const TipoDocumentoLabel = {
     DENUNCIA_SINIESTRO_CORREO: "Correo denuncia siniestro (respaldo)",
     ASIGNACION_FORMAL_CORREO: "Correo asignación formal liquidador",
     POLIZA: "Póliza (opcional)",
-    INSPECCION_ASESUR: "Inspección ASESUR",
+    INSPECCION_ASESUR: "Ficha de preinspección ASESUR",
+    ACTA_INSPECCION: "Acta inspección",
     FOTOS_VIDEOS: "Fotos y/o videos",
     MANDATO_ASESORIA_NOTARIAL: "Mandato asesoría notarial",
     CONTRATO_ASESORIA: "Contrato asesoría",
@@ -76,7 +78,7 @@ const EstadoSiniestroLabel = {
 };
 
 const TipoGestionLabel = {
-    INSPECCION: "Inspección",
+    INSPECCION: "Acta inspección",
     PRESUPUESTO: "Presupuesto",
     DESPACHO_ANTECEDENTES_LIQUIDADOR: "Despacho antecedentes al liquidador",
     RECEPCION_PROPUESTA: "Recepción propuesta",
@@ -157,7 +159,7 @@ export default function SiniestroDetailPage() {
     const { id } = useParams();
     const router = useRouter();
     const { data: session } = useSession();
-    const userRole = session?.user?.rol || null;
+    const userRole = caseRole(session?.user);
     const userId = session?.user?.id || session?.user?.sub || null;
     const isOps = ["OPERACIONES", "SUPERADMIN", "GERENTE", "MASTER", "FINANZAS"].includes(userRole);
 
@@ -927,7 +929,7 @@ export default function SiniestroDetailPage() {
     const openCompletarGestion = (g) => {
         const defaultDoc =
             g.tipo === "INSPECCION"
-                ? "INSPECCION_ASESUR"
+                ? "ACTA_INSPECCION"
                 : g.tipo === "PRESUPUESTO"
                     ? "PRESUPUESTO_EXCEL"
                     : g.tipo === "RECEPCION_PROPUESTA"
@@ -943,7 +945,7 @@ export default function SiniestroDetailPage() {
             open: true,
             gestion: g,
             tipoDoc: defaultDoc,
-            tituloDoc: g.titulo || "",
+            tituloDoc: g.tipo === "INSPECCION" ? "Acta inspección" : g.titulo || "",
             fechaRecepcion: "",
             observaciones: "",
             file: null,
@@ -961,6 +963,10 @@ export default function SiniestroDetailPage() {
     };
 
     const completarGestion = async () => {
+        if (completeModal.gestion?.tipo === "INSPECCION" && !completeModal.files?.length && !completeModal.file) {
+            setError("Adjunta el acta de inspección para completar esta gestión.");
+            return;
+        }
         try {
             setBusy(true);
             const fd = new FormData();
@@ -2846,7 +2852,8 @@ export default function SiniestroDetailPage() {
             {completeModal.open && (
                 <Modal open={completeModal.open} onClose={() => setCompleteModal(p => ({ ...p, open: false }))} title="Completar Gestión" footer={<Button onClick={completarGestion}>Finalizar Hito</Button>}>
                     <div className="space-y-6">
-                        <Select label="Documento a Adjuntar" value={completeModal.tipoDoc} onChange={v => setCompleteModal(p => ({ ...p, tipoDoc: v }))} options={Object.keys(TipoDocumentoLabel).map(k => ({ value: k, label: TipoDocumentoLabel[k] }))} />
+                        <Select label="Documento a Adjuntar" value={completeModal.tipoDoc} onChange={v => setCompleteModal(p => ({ ...p, tipoDoc: v }))} options={(completeModal.gestion?.tipo === "INSPECCION" ? ["ACTA_INSPECCION"] : Object.keys(TipoDocumentoLabel)).map(k => ({ value: k, label: TipoDocumentoLabel[k] }))} />
+                        {completeModal.gestion?.tipo === "INSPECCION" && <p className="text-sm">Adjunta el acta de inspección. Las fotos de la app se conservan por separado.</p>}
                         <Input label="Nombre del Archivo" value={completeModal.tituloDoc} onChange={v => setCompleteModal(p => ({ ...p, tituloDoc: v }))} />
                         {completeModal.gestion?.tipo === "PRESUPUESTO" && (
                             <div className="mt-4 p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20">

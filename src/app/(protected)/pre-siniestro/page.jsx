@@ -1,4 +1,6 @@
 "use client";
+import { caseRole } from "@/lib/casePermissions";
+import CasePhotos from "@/components/CasePhotos";
 
 // src/app/(protected)/pre-siniestro/page.jsx
 import { useEffect, useMemo, useState } from "react";
@@ -100,7 +102,7 @@ export default function PreSiniestroPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
-  const userRole = session?.user?.rol || null;
+  const userRole = caseRole(session?.user);
   const userId = session?.user?.id || session?.user?.sub || null;
   const isOps = ["OPERACIONES", "SUPERADMIN", "GERENTE", "MASTER"].includes(userRole);
   const isAsesor = userRole === "ASESOR";
@@ -2326,6 +2328,7 @@ export default function PreSiniestroPage() {
               </div>
             </Section>
 
+            <CasePhotos key={selected.id} caso={selected} user={session?.user} onChange={(fotos) => setSelected((current) => ({ ...current, fotos }))} />
             {/* Recintos Afectados */}
             {selected?.recintos?.length > 0 && (
               <Section title={`Recintos Afectados (${selected.recintos.length})`}>

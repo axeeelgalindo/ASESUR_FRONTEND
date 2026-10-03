@@ -1,4 +1,6 @@
 "use client";
+import { caseRole, managesAllCases } from "@/lib/casePermissions";
+import CasePhotos from "@/components/CasePhotos";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -72,7 +74,6 @@ export default function CaptacionesPage() {
 
   const [openDetail, setOpenDetail] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
   // Asignación de asesor (operaciones)
   const [asesores, setAsesores] = useState([]);
@@ -125,7 +126,7 @@ export default function CaptacionesPage() {
     }
   };
 
-  const userRole = (session?.user?.rol || session?.user?.role || "USUARIO").toUpperCase();
+  const userRole = caseRole(session?.user);
   const canCreate = ["CAPTADOR", "ASESOR", "OPERACIONES", "SUPERADMIN"].includes(userRole);
   const canAssignAsesor = ["OPERACIONES", "SUPERADMIN", "FINANZAS"].includes(userRole);
 
@@ -185,7 +186,6 @@ export default function CaptacionesPage() {
   const openCaso = async (c) => {
     setError(null);
     setBusy(true);
-    setCurrentPhotoIndex(0);
     try {
       const full = await apiGet(`/captaciones/${c.id}`);
       setSelected(full);
@@ -594,7 +594,7 @@ export default function CaptacionesPage() {
                 <section className="space-y-4">
                   <h4 className="font-headline font-bold text-sm uppercase tracking-widest text-secondary">Validación y Asignación de Asesor</h4>
                   
-                  {selected.estado !== "PENDIENTE_AUTORIZACION" && !selected.asesorId ? (
+                  {!managesAllCases(session?.user) && selected.estado !== "PENDIENTE_AUTORIZACION" && !selected.asesorId ? (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800 text-sm flex items-center gap-3">
                        <span className="material-symbols-outlined">warning</span>
                        <p className="font-medium">La captación aún no está lista para VB. El captador debe finalizarla.</p>
@@ -643,61 +643,7 @@ export default function CaptacionesPage() {
                 </section>
               )}
 
-              {/* Fotos */}
-              <section className="space-y-4">
-                <h4 className="font-headline font-bold text-sm uppercase tracking-widest text-primary">Fotografías ({selected.fotos?.length || 0})</h4>
-                {selected.fotos?.length > 0 ? (
-                  <div className="flex flex-col gap-3">
-                    <div className="relative aspect-[4/3] bg-surface-container-highest rounded-2xl overflow-hidden border border-outline-variant/10 flex items-center justify-center">
-                       <img src={fileUrl(selected.fotos[currentPhotoIndex]?.urlArchivo)} className="w-full h-full object-contain bg-black/5" />
-                       
-                       <button 
-                         onClick={() => setCurrentPhotoIndex(prev => prev > 0 ? prev - 1 : selected.fotos.length - 1)}
-                         className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-black/50 text-white rounded-full flex items-center justify-center hover:bg-black/70 transition-colors"
-                       >
-                         <span className="material-symbols-outlined">chevron_left</span>
-                       </button>
-
-                       <button 
-                         onClick={() => setCurrentPhotoIndex(prev => prev < selected.fotos.length - 1 ? prev + 1 : 0)}
-                         className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-black/50 text-white rounded-full flex items-center justify-center hover:bg-black/70 transition-colors"
-                       >
-                         <span className="material-symbols-outlined">chevron_right</span>
-                       </button>
-                       
-                       <div className="absolute top-4 right-4 bg-black/60 text-white text-[10px] font-bold px-3 py-1 rounded-full">
-                         {currentPhotoIndex + 1} / {selected.fotos.length}
-                       </div>
-                    </div>
-
-                    <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant/10">
-                       <p className="text-on-surface font-bold text-sm uppercase tracking-widest">{selected.fotos[currentPhotoIndex]?.parteCasa || "General"}</p>
-                       {selected.fotos[currentPhotoIndex]?.titulo ? (
-                         <p className="text-on-surface-variant text-sm mt-1">{selected.fotos[currentPhotoIndex].titulo}</p>
-                       ) : (
-                         <p className="text-on-surface-variant/50 text-sm mt-1 italic">Sin comentarios u observaciones.</p>
-                       )}
-                    </div>
-
-                    <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                      {selected.fotos.map((f, idx) => (
-                        <button
-                          key={f.id}
-                          onClick={() => setCurrentPhotoIndex(idx)}
-                          className={`flex-shrink-0 relative w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${idx === currentPhotoIndex ? 'border-primary shadow-md' : 'border-transparent opacity-60 hover:opacity-100'}`}
-                        >
-                          <img src={fileUrl(f.urlArchivo)} className="w-full h-full object-cover" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 text-center">
-                    <p className="text-on-surface-variant text-sm">No hay fotografías disponibles.</p>
-                  </div>
-                )}
-              </section>
-
+              <CasePhotos key={selected.id} caso={selected} user={session?.user} onChange={(fotos) => setSelected((current) => ({ ...current, fotos }))} />
               {/* Documentos */}
               <section className="space-y-4">
                 <h4 className="font-headline font-bold text-sm uppercase tracking-widest text-primary">Documentos ({selected.documentos?.length || 0})</h4>
