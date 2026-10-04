@@ -1,5 +1,6 @@
 "use client";
 import { caseRole, managesAllCases } from "@/lib/casePermissions";
+import MasterCaseControls from "@/components/MasterCaseControls";
 import CasePhotos from "@/components/CasePhotos";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
@@ -643,6 +644,7 @@ export default function CaptacionesPage() {
                 </section>
               )}
 
+              <MasterCaseControls caso={selected} user={session?.user} onChange={async () => setSelected(await apiGet(`/casos/${selected.id}`))} onDeleted={async () => { setOpenDetail(false); setSelected(null); setSuccessToast({ message: "Caso eliminado", detail: "Se eliminó el expediente y se registró la acción de MASTER." }); await refresh(query); }} />
               <CasePhotos key={selected.id} caso={selected} user={session?.user} onChange={(fotos) => setSelected((current) => ({ ...current, fotos }))} />
               {/* Documentos */}
               <section className="space-y-4">

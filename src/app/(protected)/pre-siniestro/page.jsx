@@ -1,5 +1,6 @@
 "use client";
 import { caseRole } from "@/lib/casePermissions";
+import MasterCaseControls from "@/components/MasterCaseControls";
 import CasePhotos from "@/components/CasePhotos";
 
 // src/app/(protected)/pre-siniestro/page.jsx
@@ -2328,7 +2329,8 @@ export default function PreSiniestroPage() {
               </div>
             </Section>
 
-            <CasePhotos key={selected.id} caso={selected} user={session?.user} onChange={(fotos) => setSelected((current) => ({ ...current, fotos }))} />
+            <MasterCaseControls caso={selected} user={session?.user} onChange={async () => setSelected(await apiGet(`/pre-siniestro/${selected.id}`))} onDeleted={async () => { setOpenDetail(false); setSelected(null); setSuccessToast({ message: "Caso eliminado", detail: "Se eliminó el expediente y se registró la acción de MASTER." }); await refresh(query); }} />
+              <CasePhotos key={selected.id} caso={selected} user={session?.user} onChange={(fotos) => setSelected((current) => ({ ...current, fotos }))} />
             {/* Recintos Afectados */}
             {selected?.recintos?.length > 0 && (
               <Section title={`Recintos Afectados (${selected.recintos.length})`}>

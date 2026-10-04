@@ -1,4 +1,5 @@
 "use client";
+import MasterCaseControls from "@/components/MasterCaseControls";
 import { caseRole } from "@/lib/casePermissions";
 
 import React, { useEffect, useState, useMemo } from "react";
@@ -1368,6 +1369,7 @@ export default function SiniestroDetailPage() {
                     </div>
                 </div>
 
+                <MasterCaseControls caso={selected} user={session?.user} onChange={reloadSelected} />
                 {/* Sección de Información & Tabs */}
                 <div className="grid gap-6 lg:grid-cols-12">
                     {/* Bloque Izquierdo: Resumen & Tabs */}
