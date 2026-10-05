@@ -1,4 +1,5 @@
 "use client";
+import PhotoSectorComments from "@/components/PhotoSectorComments";
 import MasterCaseControls from "@/components/MasterCaseControls";
 import { caseRole } from "@/lib/casePermissions";
 
@@ -97,7 +98,7 @@ const EstadoFacturacionLabel = {
 };
 
 const ParteCasaLabel = {
-    FACHADA: "Fachada",
+    FACHADA: "Fachada y registro",
     LIVING_COMEDOR: "Living / Comedor",
     COCINA: "Cocina",
     DORMITORIO_PRINCIPAL: "Dormitorio Principal",
@@ -2262,6 +2263,7 @@ export default function SiniestroDetailPage() {
 
                             {tab === "fotos" && (
                                 <Section title="Galería del Caso" desc="Evidencias capturadas en terreno">
+                                    <PhotoSectorComments photos={selected.fotos} />
                                     {!selected.fotos?.length && (
                                         <p className="text-center text-sm font-bold text-on-surface-variant/40 py-12">Sin fotos registradas.</p>
                                     )}
@@ -2272,7 +2274,7 @@ export default function SiniestroDetailPage() {
                                             return (
                                                 <div key={f.id} className={cls(
                                                     "group relative overflow-hidden rounded-[2.5rem] border shadow-lg transition-all",
-                                                    editing ? "border-primary/40 aspect-auto p-5 bg-surface-container-lowest" : "aspect-[4/3] border-outline-variant/10"
+                                                    editing ? "border-primary/40 aspect-auto p-5 bg-surface-container-lowest" : "border-outline-variant/10 bg-surface-container-lowest"
                                                 )}>
                                                     {editing ? (
                                                         /* ── Modo edición foto ── */
@@ -2355,12 +2357,12 @@ export default function SiniestroDetailPage() {
                                                     ) : (
                                                         /* ── Vista normal foto ── */
                                                         <>
-                                                            <img src={fileUrl(f.urlArchivo)} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
-                                                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent p-6 flex flex-col justify-end">
-                                                                <p className="text-[10px] font-black uppercase tracking-widest text-white/60">{ParteCasaLabel[f.parteCasa] || f.parteCasa}</p>
-                                                                <h6 className="text-white font-black truncate">{f.titulo || "Sin título"}</h6>
+                                                            <img src={fileUrl(f.urlArchivo)} alt={ParteCasaLabel[f.parteCasa] || f.parteCasa} className="aspect-[4/3] w-full object-cover" />
+                                                            <div className="bg-surface-container-highest p-6 flex flex-col justify-end">
+                                                                <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">{ParteCasaLabel[f.parteCasa] || f.parteCasa}</p>
+                                                                <p className="mt-2 whitespace-pre-wrap break-words text-sm text-on-surface">{f.titulo || "Sin comentario"}</p>
                                                                 <div className="mt-4 flex items-center gap-2">
-                                                                    <a href={fileUrl(f.urlArchivo)} target="_blank" className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition-all hover:bg-primary hover:text-on-primary">
+                                                                    <a href={fileUrl(f.urlArchivo)} target="_blank" className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary transition-all hover:bg-primary hover:text-on-primary">
                                                                         <span className="material-symbols-outlined text-xl">zoom_in</span>
                                                                     </a>
                                                                     {canEditDocs(selected) && (
@@ -2368,7 +2370,7 @@ export default function SiniestroDetailPage() {
                                                                             <button
                                                                                 onClick={() => openEditFoto(f)}
                                                                                 title="Editar foto"
-                                                                                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition-all hover:bg-primary hover:text-on-primary"
+                                                                                className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary transition-all hover:bg-primary hover:text-on-primary"
                                                                             >
                                                                                 <span className="material-symbols-outlined text-xl">edit</span>
                                                                             </button>
@@ -2376,7 +2378,7 @@ export default function SiniestroDetailPage() {
                                                                                 onClick={() => deleteFoto(f.id)}
                                                                                 title="Eliminar foto"
                                                                                 disabled={busy}
-                                                                                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition-all hover:bg-error hover:text-on-error"
+                                                                                className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary transition-all hover:bg-error hover:text-on-error"
                                                                             >
                                                                                 <span className="material-symbols-outlined text-xl">delete</span>
                                                                             </button>

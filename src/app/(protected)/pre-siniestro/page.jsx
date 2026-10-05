@@ -1,5 +1,6 @@
 "use client";
 import { caseRole } from "@/lib/casePermissions";
+import { photoSectorLabel } from "@/lib/casePhotos.mjs";
 import MasterCaseControls from "@/components/MasterCaseControls";
 import CasePhotos from "@/components/CasePhotos";
 
@@ -1585,7 +1586,7 @@ export default function PreSiniestroPage() {
               {/* Lista de partes de la casa */}
               <div className="divide-y divide-outline-variant/10">
                 {[
-                  { key: "FACHADA", label: "Fachada", icon: "home" },
+                  { key: "FACHADA", label: "Fachada y registro", icon: "home" },
                   { key: "LIVING_COMEDOR", label: "Living / Comedor", icon: "chair" },
                   { key: "COCINA", label: "Cocina", icon: "soup_kitchen" },
                   { key: "DORMITORIO_PRINCIPAL", label: "Dormitorio Principal", icon: "bed" },
@@ -2010,7 +2011,7 @@ export default function PreSiniestroPage() {
                     />
                     <img src={url} alt="" className="aspect-square w-full rounded-xl object-cover opacity-80 transition hover:opacity-100" />
                     <div className="mt-2 text-center text-[10px] font-black uppercase tracking-tighter text-on-surface-variant truncate px-1">
-                      {String(f.parteCasa || "EVIDENCIA").replaceAll("_", " ")}
+                      {photoSectorLabel(f.parteCasa)}
                     </div>
                   </label>
                 );

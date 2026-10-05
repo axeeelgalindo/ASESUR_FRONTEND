@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 import { apiPatch, apiPatchForm, apiPostForm, fileUrl } from "@/lib/api";
 import { caseRole } from "@/lib/casePermissions";
+import { photoSectorLabel } from "@/lib/casePhotos.mjs";
+import PhotoSectorComments from "@/components/PhotoSectorComments";
 
 const PARTS = ["FACHADA", "LIVING_COMEDOR", "COCINA", "DORMITORIO_PRINCIPAL", "DORMITORIO_SECUNDARIO", "BANO", "PASILLO", "ESCALERA", "TECHUMBRE", "TECHO", "PATIO", "GARAGE", "LOGGIA", "OTRO"];
 const EDIT_ACTION_STYLE = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-semibold text-primary transition hover:border-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
@@ -66,7 +68,7 @@ export default function CasePhotos({ caso, user, onChange }) {
       <h4 className="font-bold">Imágenes de preinspección ({caso.fotos?.length || 0})</h4>
       {error && <p role="alert" className="text-error">{error}</p>}
       {canUpload && <div className="grid gap-3">
-        <label>Sector <select className="w-full rounded border p-2" value={part} disabled={busy} onChange={(e) => setPart(e.target.value)}>{PARTS.map((p) => <option key={p} value={p}>{p.replaceAll("_", " ")}</option>)}</select></label>
+        <label>Sector <select className="w-full rounded border p-2" value={part} disabled={busy} onChange={(e) => setPart(e.target.value)}>{PARTS.map((p) => <option key={p} value={p}>{photoSectorLabel(p)}</option>)}</select></label>
         <label>Comentario <input className="w-full rounded border p-2" maxLength={500} value={title} disabled={busy} onChange={(e) => setTitle(e.target.value)} /></label>
         <div className="space-y-3 rounded-xl border border-dashed border-primary/40 bg-primary/5 p-4">
           <input ref={fileInput} key={inputKey} className="hidden" aria-label="Seleccionar imágenes" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
@@ -84,10 +86,11 @@ export default function CasePhotos({ caso, user, onChange }) {
         </div>
         <button type="button" className="rounded bg-primary p-2 text-on-primary disabled:opacity-50" disabled={busy || !files.length} onClick={upload}>{busy ? "Guardando…" : `Subir imágenes${files.length ? ` (${files.length})` : ""}`}</button>
       </div>}
+      <PhotoSectorComments photos={caso.fotos} />
       <div className="grid gap-4 sm:grid-cols-2">
         {(caso.fotos || []).map((foto) => <div key={foto.id} className="space-y-2 rounded border border-outline-variant/20 p-3">
           <a href={fileUrl(foto.urlArchivo)} target="_blank" rel="noreferrer"><img src={fileUrl(foto.urlArchivo)} alt={foto.titulo || foto.parteCasa || "Preinspección"} className="h-40 w-full object-contain" /></a>
-          <p className="text-sm">{foto.parteCasa?.replaceAll("_", " ")}</p>
+          <p className="text-sm">{photoSectorLabel(foto.parteCasa)}</p>
           {editing?.id === foto.id ? <div className="space-y-2">
             <p className="flex items-center gap-2 text-sm font-semibold text-primary"><PhotoActionIcon type={editing.mode} />{editing.mode === "image" ? "Reemplazar imagen" : "Editar comentario"}</p>
             {editing.mode === "comment" && <label>Comentario <input autoFocus className="w-full rounded border p-2" maxLength={500} disabled={busy} value={editing.titulo} onChange={(e) => setEditing({ ...editing, titulo: e.target.value })} /></label>}
@@ -109,7 +112,7 @@ export default function CasePhotos({ caso, user, onChange }) {
                 Cancelar
               </button>
             </div>
-          </div> : <><p className="text-sm">{foto.titulo}</p>{(privileged || inspector || foto.subidoPorId === user?.id) && <div className="flex flex-wrap gap-2 pt-1">
+          </div> : <><p className="whitespace-pre-wrap break-words text-sm">{foto.titulo}</p>{(privileged || inspector || foto.subidoPorId === user?.id) && <div className="flex flex-wrap gap-2 pt-1">
             <button type="button" className={EDIT_ACTION_STYLE} title="Reemplazar esta imagen" aria-label="Editar imagen" disabled={busy} onClick={() => setEditing({ id: foto.id, titulo: foto.titulo || "", file: null, mode: "image" })}><PhotoActionIcon type="image" />Imagen</button>
             <button type="button" className={EDIT_ACTION_STYLE} title="Editar el comentario de esta imagen" aria-label="Editar comentario" disabled={busy} onClick={() => setEditing({ id: foto.id, titulo: foto.titulo || "", file: null, mode: "comment" })}><PhotoActionIcon type="comment" />Comentario</button>
           </div>}</>}
