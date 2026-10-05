@@ -112,7 +112,7 @@ export default function CasePhotos({ caso, user, onChange }) {
                 Cancelar
               </button>
             </div>
-          </div> : <><p className="whitespace-pre-wrap break-words text-sm">{foto.titulo}</p>{(privileged || inspector || foto.subidoPorId === user?.id) && <div className="flex flex-wrap gap-2 pt-1">
+          </div> : <><p className="whitespace-pre-wrap break-words text-sm">{String(foto.titulo || "").trim() || "Sin comentarios"}</p>{(privileged || inspector || foto.subidoPorId === user?.id) && <div className="flex flex-wrap gap-2 pt-1">
             <button type="button" className={EDIT_ACTION_STYLE} title="Reemplazar esta imagen" aria-label="Editar imagen" disabled={busy} onClick={() => setEditing({ id: foto.id, titulo: foto.titulo || "", file: null, mode: "image" })}><PhotoActionIcon type="image" />Imagen</button>
             <button type="button" className={EDIT_ACTION_STYLE} title="Editar el comentario de esta imagen" aria-label="Editar comentario" disabled={busy} onClick={() => setEditing({ id: foto.id, titulo: foto.titulo || "", file: null, mode: "comment" })}><PhotoActionIcon type="comment" />Comentario</button>
           </div>}</>}
