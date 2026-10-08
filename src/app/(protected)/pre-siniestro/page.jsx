@@ -1,5 +1,6 @@
 "use client";
 import { caseRole } from "@/lib/casePermissions";
+import { formatCalendarDate } from "@/lib/calendarDate.mjs";
 import { photoSectorLabel } from "@/lib/casePhotos.mjs";
 import MasterCaseControls from "@/components/MasterCaseControls";
 import CasePhotos from "@/components/CasePhotos";
@@ -2245,7 +2246,7 @@ export default function PreSiniestroPage() {
                     {selected.fechaOcurrencia && (
                       <div>
                         <div className="text-[10px] font-bold text-on-surface-variant/60 uppercase">Fecha Ocurrencia</div>
-                        <div className="text-sm font-black">{new Date(selected.fechaOcurrencia).toLocaleDateString("es-CL")}</div>
+                        <div className="text-sm font-black">{formatCalendarDate(selected.fechaOcurrencia)}</div>
                       </div>
                     )}
                     {selected.antiguedadEdificio && (
