@@ -17,7 +17,7 @@ export default function PoliticaDePrivacidadPage() {
           <h1 id="privacy-title">Política de Privacidad de Asesur APP</h1>
           <dl className={styles.details}>
             <div><dt>Aplicación</dt><dd>Asesur APP (com.asesur.app)</dd></div>
-            <div><dt>Última actualización</dt><dd><time dateTime="2026-10-01">01-10-2026</time></dd></div>
+            <div><dt>Última actualización</dt><dd><time dateTime="2026-11-01">01-11-2026</time></dd></div>
           </dl>
         </header>
         <p>{contenido.intro}</p>

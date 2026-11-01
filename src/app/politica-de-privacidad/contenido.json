@@ -98,6 +98,14 @@
       ]
     },
     {
+      "title": "Solicitudes de soporte",
+      "paragraphs": [
+        "La página pública de soporte permite enviar nombre, correo electrónico, motivo, plataforma y una descripción de la consulta. Se utilizan para atender problemas de Asesur APP y responder al solicitante. No deben incluirse contraseñas, códigos de acceso ni datos personales de clientes.",
+        "El formulario envía estos antecedentes mediante Resend desde sistema@asesur.cl al correo de soporte galindo.del.axel@gmail.com. La dirección del solicitante se incluye como dirección de respuesta. Las consultas se conservan en los servicios de correo correspondientes; el formulario no crea una cuenta ni guarda las consultas en una base de datos propia. No se establece aquí un plazo de conservación de los correos.",
+        "Para limitar envíos repetidos, el servidor mantiene temporalmente un hash de la dirección IP y un contador por instancia, durante una ventana de quince minutos. El contenido del formulario no se incorpora a ese contador. La infraestructura puede generar sus propios registros técnicos."
+      ]
+    },
+    {
       "title": "Derechos y contacto",
       "paragraphs": [
         "Puedes solicitar información sobre el tratamiento de tus datos y ejercer los derechos de acceso, rectificación, eliminación o cancelación y oposición que correspondan según la legislación aplicable. Cuando un tratamiento dependa de tu autorización, puedes solicitar su revocación para actuaciones futuras, sin que ello elimine automáticamente obligaciones de conservación o actuaciones previas legítimas.",
